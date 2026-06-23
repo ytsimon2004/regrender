@@ -17,6 +17,13 @@ from neuralib.util.verbose import fprint, print_save
 __all__ = ['RegisterOptions', 'estimate_transform', 'save_transform']
 
 
+def _u8(img: np.ndarray) -> np.ndarray:
+    """contrast-normalize any image to uint8"""
+    img = np.asarray(img, dtype=float)
+    lo, hi = float(img.min()), float(img.max())
+    return ((img - lo) / ((hi - lo) or 1.0) * 255).astype(np.uint8)
+
+
 def estimate_transform(slice_xy: np.ndarray, atlas_xy: np.ndarray, *, affine: bool = False) -> np.ndarray:
     """Estimate the 3x3 matrix mapping histology (slice) points onto atlas points.
 
@@ -62,7 +69,7 @@ def save_transform(matrix: np.ndarray, *,
         'slice_index': int(slice_index),
         'dw': int(dw),
         'dh': int(dh),
-        'slice_xy': np.asarray(slice_xy, dtype=float).tolist(),
+        'slice_xy': np.asarray(slice_xy, dtype=float).tolist(),  # TODO check if needed?
         'atlas_xy': np.asarray(atlas_xy, dtype=float).tolist(),
     }
     js = output_dir / f'{name}_transform.json'
@@ -159,7 +166,7 @@ class RegisterOptions(AbstractParser):
                 return f'id {rid}'
 
         def pts_kw(color):
-            return dict(face_color=color, size=20, ndim=2,
+            return dict(face_color=color, border_color=color, symbol='cross', size=20, ndim=2,
                         features={'n': np.empty(0, dtype='<U3')},
                         text={'string': '{n}', 'color': color, 'size': 12, 'translation': [-12, 0]})
 
@@ -231,7 +238,6 @@ class RegisterOptions(AbstractParser):
             y, x = event.position
             viewer.text_overlay.text = region_name(y, x)
 
-
         def collect() -> tuple[np.ndarray, np.ndarray]:
             # napari points are (row, col); convert to (x, y), un-translate the slice side
             a = atlas_pts.data[:, ::-1]
@@ -245,23 +251,25 @@ class RegisterOptions(AbstractParser):
             except ValueError as e:
                 status.value = f'preview failed: {e}'
                 return
-            warped = apply_transformation(hist, m)
-            off = (0, atlas_w)  # show in place, on the histology (right) side
-            if 'preview' in viewer.layers:
-                viewer.layers['preview'].data = warped
-                viewer.layers['preview_boundaries'].data = boundary_mask(state['ann'])
+            # inverse-warp the atlas boundaries into raw-slice space so they overlay the
+            # (unmodified) histology -> points stay visible and can still be added/adjusted
+            bmask = boundary_mask(state['ann'])
+            h, w = bmask.shape
+            binv = cv2.warpPerspective(bmask, np.linalg.inv(m), (w, h))
+            off = (0, atlas_w)  # on the histology (right) side
+            if 'preview_boundaries' in viewer.layers:
+                viewer.layers['preview_boundaries'].data = binv
             else:
-                viewer.add_image(warped, name='preview', colormap='gray', translate=off)
-                viewer.add_image(boundary_mask(state['ann']), name='preview_boundaries',
-                                 colormap=orange, blending='additive', opacity=0.9, translate=off)
-            hist_layer.visible = False  # hide the raw slice; preview replaces it in place
-            status.value = 'preview: warped slice + atlas boundaries (right) — Exit preview to go back'
+                viewer.add_image(binv, name='preview_boundaries', colormap=orange,
+                                 blending='additive', opacity=0.9, translate=off)
+            # keep the points on top so they stay visible/clickable over the overlay
+            for layer in (atlas_pts, slice_pts):
+                viewer.layers.move(viewer.layers.index(layer), len(viewer.layers) - 1)
+            status.value = 'preview: atlas boundaries on your slice — keep adjusting points, then Exit preview'
 
         def on_exit_preview():
-            for n in ('preview', 'preview_boundaries'):
-                if n in viewer.layers:
-                    viewer.layers.remove(n)
-            hist_layer.visible = True
+            if 'preview_boundaries' in viewer.layers:
+                viewer.layers.remove('preview_boundaries')
             status.value = 'preview closed'
 
         def on_save():
@@ -274,7 +282,21 @@ class RegisterOptions(AbstractParser):
             save_transform(m, output_dir=out_dir, name=name, plane=self.cut_plane,
                            resolution=self.resolution, slice_index=state['index'],
                            dw=state['dw'], dh=state['dh'], slice_xy=s, atlas_xy=a)
-            status.value = f'saved {name}_transform.npy / .json'
+
+            # warped histology in atlas space, and a copy with the orange boundaries burned in
+            warped = _u8(apply_transformation(hist, m))
+            trans_path = out_dir / f'{name}_transformed.tif'
+            iio.imwrite(trans_path, warped)
+            print_save(trans_path)
+
+            rgb = warped if warped.ndim == 3 else np.stack([warped] * 3, axis=-1)
+            rgb = rgb[..., :3].copy()
+            rgb[boundary_mask(state['ann']).astype(bool)] = (255, 140, 0)
+            overlay_path = out_dir / f'{name}_overlay.tif'
+            iio.imwrite(overlay_path, rgb)
+            print_save(overlay_path)
+
+            status.value = f'saved {name} transform (.npy/.json) + transformed/overlay .tif'
 
         def on_undo():
             # remove the most recently added point and restore the alternation state
