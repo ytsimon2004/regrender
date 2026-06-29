@@ -14,84 +14,10 @@ from neuralib.atlas.view import get_slice_view
 from neuralib.imglib.transform import apply_transformation
 from neuralib.util.verbose import fprint, print_save
 
-__all__ = ['RegisterOptions', 'estimate_transform', 'save_transform']
+from ccf2d.core import (boundary_mask, estimate_transform, read_oriented, region_name,
+                        rotate, save_transform, to_uint8)
 
-
-def _rotate(img: np.ndarray, deg: float) -> np.ndarray:
-    """rotate about the image center, keeping the original shape"""
-    if not deg:
-        return img
-    h, w = img.shape[:2]
-    m = cv2.getRotationMatrix2D((w / 2, h / 2), deg, 1.0)
-    return cv2.warpAffine(img, m, (w, h))
-
-
-def _to_u8(img: np.ndarray, contrast: tuple[float, float] | None = None) -> np.ndarray:
-    """map to uint8 using the given (lo, hi) contrast window, else full min-max"""
-    img = np.asarray(img, dtype=float)
-    lo, hi = contrast if contrast is not None else (float(img.min()), float(img.max()))
-    return (np.clip((img - lo) / ((hi - lo) or 1.0), 0, 1) * 255).astype(np.uint8)
-
-
-def estimate_transform(slice_xy: np.ndarray, atlas_xy: np.ndarray, *, affine: bool = False) -> np.ndarray:
-    """Estimate the 3x3 matrix mapping histology (slice) points onto atlas points.
-
-    Matches ``apply_transformation`` / ``cv2.warpPerspective`` convention: the returned
-    matrix warps the slice image into atlas space.
-
-    :param slice_xy: ``Array[float, [N, 2]]`` (x, y) points on the resized histology slice.
-    :param atlas_xy: ``Array[float, [N, 2]]`` (x, y) matched points on the atlas plane.
-    :param affine: estimate an affine (6 DOF) instead of projective (8 DOF) transform.
-    :return: ``Array[float64, [3, 3]]``
-    """
-    slice_xy = np.asarray(slice_xy, dtype=np.float64)
-    atlas_xy = np.asarray(atlas_xy, dtype=np.float64)
-    if slice_xy.shape != atlas_xy.shape:
-        raise ValueError(f'point count mismatch: {slice_xy.shape} vs {atlas_xy.shape}')
-
-    if affine:
-        if len(slice_xy) < 3:
-            raise ValueError('affine transform needs >=3 matched point pairs')
-        m, _ = cv2.estimateAffine2D(slice_xy, atlas_xy)
-        return np.vstack([m, [0, 0, 1]]).astype(np.float64)
-    else:
-        if len(slice_xy) < 4:
-            raise ValueError('projective transform needs >=4 matched point pairs')
-        m, _ = cv2.findHomography(slice_xy, atlas_xy)
-        return m.astype(np.float64)
-
-
-def save_transform(matrix: np.ndarray, *,
-                   output_dir: Path, name: str,
-                   plane: PLANE_TYPE, resolution: int,
-                   slice_index: int, dw: int, dh: int,
-                   slice_xy: np.ndarray, atlas_xy: np.ndarray,
-                   rotate: float = 0.0, flip_lr: bool = False, flip_ud: bool = False,
-                   contrast: tuple[float, float] | None = None) -> Path:
-    """Save the 3x3 matrix and metadata into a single ``.json``. Returns its path.
-
-    ``rotate``/``flip_lr``/``flip_ud`` record the preprocessing so the result can be
-    reproduced (raw -> flip -> rotate -> resize -> apply matrix) and the session resumed.
-    """
-    output_dir.mkdir(parents=True, exist_ok=True)
-    meta = {
-        'matrix': np.asarray(matrix, dtype=float).tolist(),
-        'plane': plane,
-        'resolution': resolution,
-        'slice_index': int(slice_index),
-        'dw': int(dw),
-        'dh': int(dh),
-        'rotate': float(rotate),
-        'flip_lr': bool(flip_lr),
-        'flip_ud': bool(flip_ud),
-        'contrast': list(contrast) if contrast is not None else None,
-        'slice_xy': np.asarray(slice_xy, dtype=float).tolist(),
-        'atlas_xy': np.asarray(atlas_xy, dtype=float).tolist(),
-    }
-    js = output_dir / f'{name}_transform.json'
-    js.write_text(json.dumps(meta, indent=2))
-    print_save(js)
-    return js
+__all__ = ['RegisterOptions']
 
 
 class RegisterOptions(AbstractParser):
@@ -170,18 +96,8 @@ class RegisterOptions(AbstractParser):
         self._launch_napari(view, atlas_w, out_dir, name, load, files)
 
     def _read_oriented(self, path: Path | None) -> np.ndarray | None:
-        """read an image and apply the current flips (pre-rotate, pre-resize)"""
-        if path is None:
-            return None
-        img = iio.imread(path)
-        # normalize channel-first (C, H, W) tiffs to channel-last (H, W, C)
-        if img.ndim == 3 and img.shape[0] in (3, 4) and img.shape[-1] not in (3, 4):
-            img = np.moveaxis(img, 0, -1)
-        if self.flip_ud:
-            img = np.flipud(img)
-        if self.flip_lr:
-            img = np.fliplr(img)
-        return img
+        """read an image with the current flips (pre-rotate, pre-resize), or None"""
+        return None if path is None else read_oriented(path, self.flip_lr, self.flip_ud)
 
     # (width, height) anatomical axes per plane, for tilt labels
     AXIS = {'coronal': ('ML', 'DV'), 'sagittal': ('AP', 'DV')}
@@ -197,13 +113,13 @@ class RegisterOptions(AbstractParser):
         def make_hist(angle: float) -> np.ndarray:
             if self._oriented is None:
                 return np.zeros((dim[1], dim[0]))  # placeholder until an image is loaded
-            return cv2.resize(_rotate(self._oriented, angle), dim)
+            return cv2.resize(rotate(self._oriented, angle), dim)
 
         angle0 = float(load.get('rotate', 0.0))
         state = {'index': int(load.get('slice_index', int(ref_view.n_planes) // 2)),
                  'dw': int(load.get('dw', 0)), 'dh': int(load.get('dh', 0)),
                  'expect': 'atlas', 'ann': None, 'hist': make_hist(angle0),
-                 'name': name, 'out_dir': out_dir,
+                 'name': name, 'out_dir': out_dir, 'path': self.raw_image,
                  'files': files or [], 'cursor': 0}
         if state['files'] and self.raw_image in state['files']:
             state['cursor'] = state['files'].index(self.raw_image)
@@ -218,26 +134,6 @@ class RegisterOptions(AbstractParser):
             ref_plane = ref_view.plane_at(i).with_offset(od(dw), od(dh))
             state['ref_mm'] = ref_plane.reference_value
             return ref_plane.image
-
-        def boundary_mask(ann: np.ndarray) -> np.ndarray:
-            """region boundaries = pixels where the annotation id changes vs its right/down neighbour"""
-            b = np.zeros(ann.shape, dtype=float)
-            b[:, :-1] = np.maximum(b[:, :-1], ann[:, :-1] != ann[:, 1:])
-            b[:-1, :] = np.maximum(b[:-1, :], ann[:-1, :] != ann[1:, :])
-            return b
-
-        def region_name(y: float, x: float) -> str:
-            ann = state['ann']
-            if ann is None or not (0 <= y < ann.shape[0] and 0 <= x < ann.shape[1]):
-                return ''
-            rid = int(ann[int(y), int(x)])
-            if rid == 0:
-                return ''
-            try:
-                s = structures[rid]
-                return f"{s['acronym']} — {s['name']}"
-            except KeyError:
-                return f'id {rid}'
 
         def pts_kw(color):
             return dict(face_color=color, border_color=color, symbol='cross', size=20, ndim=2,
@@ -289,6 +185,7 @@ class RegisterOptions(AbstractParser):
         def add_pt(layer, pos):
             layer.data = np.vstack([layer.data, pos]) if len(layer.data) else np.array([pos])
             renumber(layer)
+            sync_orient_lock()
 
         @viewer.mouse_drag_callbacks.append
         def on_click(_v, event):
@@ -323,6 +220,8 @@ class RegisterOptions(AbstractParser):
         dw_w = SpinBox(label=f'dw / {w_axis} tilt (voxel)', value=state['dw'], min=-200, max=200)
         dh_w = SpinBox(label=f'dh / {h_axis} tilt (voxel)', value=state['dh'], min=-200, max=200)
         rot_w = SpinBox(label='rotate (deg)', value=angle0, min=-180, max=180)
+        flip_lr_w = CheckBox(label='flip L-R', value=self.flip_lr)
+        flip_ud_w = CheckBox(label='flip U-D', value=self.flip_ud)
         pick_w = CheckBox(label='pick points', value=True)
         grid_w = CheckBox(label='xy grid', value=False)
         grid_w.changed.connect(lambda *_: setattr(grid_layer, 'visible', grid_w.value))
@@ -352,6 +251,28 @@ class RegisterOptions(AbstractParser):
 
         rot_w.changed.connect(set_rotation)
 
+        def set_flip(*_):
+            self.flip_lr, self.flip_ud = flip_lr_w.value, flip_ud_w.value
+            self._oriented = self._read_oriented(state['path'])  # flips applied at read time
+            state['hist'] = make_hist(rot_w.value)
+            set_histology(state['hist'])
+            slice_pts.data = np.empty((0, 2))  # slice points are stale once the image flips
+            renumber(slice_pts)
+            state['expect'] = 'atlas' if len(atlas_pts.data) == len(slice_pts.data) else 'slice'
+            status.value = 'flipped — re-pick the slice points'
+
+        flip_lr_w.changed.connect(set_flip)
+        flip_ud_w.changed.connect(set_flip)
+
+        for w in (rot_w, flip_lr_w, flip_ud_w):
+            w.tooltip = 'clear points to re-orient'
+
+        def sync_orient_lock():
+            # orient-first: rotate/flip allowed only before any point is picked
+            locked = bool(len(atlas_pts.data) or len(slice_pts.data))
+            for w in (rot_w, flip_lr_w, flip_ud_w):
+                w.enabled = not locked
+
         def info_text() -> str:
             return (f"index {state['index']} = {state.get('ref_mm', '?')} mm from Bregma   ·   "
                     f"dw {state['dw'] * res} µm, dh {state['dh'] * res} µm")
@@ -375,7 +296,7 @@ class RegisterOptions(AbstractParser):
         @viewer.mouse_move_callbacks.append
         def on_move(_v, event):
             y, x = event.position
-            viewer.text_overlay.text = region_name(y, x)
+            viewer.text_overlay.text = region_name(state['ann'], structures, y, x)
 
         def collect() -> tuple[np.ndarray, np.ndarray]:
             # napari points are (row, col); convert to (x, y), un-translate the slice side
@@ -425,15 +346,15 @@ class RegisterOptions(AbstractParser):
                 return
             out_dir, name = state['out_dir'], state['name']
             contrast = tuple(float(v) for v in hist_layer.contrast_limits)
-            save_transform(m, output_dir=out_dir, name=name, plane=self.cut_plane,
-                           resolution=self.resolution, slice_index=state['index'],
-                           dw=state['dw'], dh=state['dh'], slice_xy=s, atlas_xy=a,
-                           rotate=rot_w.value, flip_lr=self.flip_lr, flip_ud=self.flip_ud,
-                           contrast=contrast)
+            print_save(save_transform(m, output_dir=out_dir, name=name, plane=self.cut_plane,
+                                      resolution=self.resolution, slice_index=state['index'],
+                                      dw=state['dw'], dh=state['dh'], slice_xy=s, atlas_xy=a,
+                                      rotate=rot_w.value, flip_lr=self.flip_lr, flip_ud=self.flip_ud,
+                                      contrast=contrast))
 
             # warped histology in atlas space, and a copy with the boundaries burned in.
             # bake the layer's contrast window so the .tif matches what you see.
-            warped = _to_u8(apply_transformation(state['hist'], m), contrast)
+            warped = to_uint8(apply_transformation(state['hist'], m), contrast)
             trans_path = out_dir / f'{name}_transformed.tif'
             iio.imwrite(trans_path, warped)
             print_save(trans_path)
@@ -459,6 +380,7 @@ class RegisterOptions(AbstractParser):
                 slice_pts.data = slice_pts.data[:-1]
                 renumber(slice_pts)
                 state['expect'] = 'slice'
+            sync_orient_lock()
             status.value = f'{len(slice_pts.data)} complete pair(s); next: {state["expect"]} point'
 
         def on_clear():
@@ -466,6 +388,7 @@ class RegisterOptions(AbstractParser):
                 layer.data = np.empty((0, 2))
                 renumber(layer)
             state['expect'] = 'atlas'
+            sync_orient_lock()
             status.value = 'cleared all points'
 
         def rebuild_plane(*_):
@@ -508,16 +431,20 @@ class RegisterOptions(AbstractParser):
             dw_w.value = int(meta.get('dw', 0))
             dh_w.value = int(meta.get('dh', 0))
             rot_w.value = float(meta.get('rotate', 0.0))
+            flip_lr_w.value = bool(meta.get('flip_lr', False))
+            flip_ud_w.value = bool(meta.get('flip_ud', False))
             ax = np.asarray(meta.get('atlas_xy', []), dtype=float).reshape(-1, 2)
             sx = np.asarray(meta.get('slice_xy', []), dtype=float).reshape(-1, 2)
             atlas_pts.data = ax[:, ::-1] if len(ax) else np.empty((0, 2))
             slice_pts.data = sx[:, ::-1] + np.array([0, atlas_w]) if len(sx) else np.empty((0, 2))
             renumber(atlas_pts)
             renumber(slice_pts)
+            sync_orient_lock()
             state['expect'] = 'atlas' if len(ax) == len(sx) else 'slice'
 
         def load_image_path(p: Path):
             p = Path(p)
+            state['path'] = p
             self._oriented = self._read_oriented(p)
             state['name'] = self.name or p.stem
             state['out_dir'] = self.output_dir or p.parent / 'transformations'
@@ -592,7 +519,7 @@ class RegisterOptions(AbstractParser):
 
         viewer.window.add_dock_widget(
             Container(widgets=[load_btn, load_dir_btn, prev_btn, next_btn, plane_w, idx_w, dw_w, dh_w,
-                               rot_w, info_w, pick_w, grid_w, color_w, undo_btn, clear_btn,
+                               rot_w, flip_lr_w, flip_ud_w, info_w, pick_w, grid_w, color_w, undo_btn, clear_btn,
                                preview_btn, exit_preview_btn, save_btn, status]),
             area='right', name='register'
         )

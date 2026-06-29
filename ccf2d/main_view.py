@@ -115,16 +115,11 @@ class ViewOptions(AbstractParser):
     def _run(self):
         if self.ccf_data.suffix == '.json':
             # reproduce the registration preprocessing: raw -> flip -> rotate -> resize -> apply
-            import imageio.v3 as iio
             import numpy as np
-            from ccf2d.main_register import _rotate
+            from ccf2d.core import read_oriented, rotate
             meta = json.loads(self.ccf_data.read_text())
-            img = iio.imread(self.raw_image)
-            if meta.get('flip_ud'):
-                img = np.flipud(img)
-            if meta.get('flip_lr'):
-                img = np.fliplr(img)
-            img = _rotate(img, float(meta.get('rotate', 0.0)))
+            img = read_oriented(self.raw_image, meta.get('flip_lr', False), meta.get('flip_ud', False))
+            img = rotate(img, float(meta.get('rotate', 0.0)))
             matrix = np.array(meta['matrix'], dtype=float)
             raw, trans = slice_transform_helper(img, matrix, plane_type=self.cut_plane)
         else:
