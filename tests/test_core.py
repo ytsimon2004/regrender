@@ -108,3 +108,11 @@ def test_plane_point_to_ccf_mm_coronal_bregma():
     from neuralib.atlas.util import allen_to_brainrender_coord
     out = allen_to_brainrender_coord(np.array([[ap, dv, ml]]))[0]
     assert np.allclose(out, [540 * 10, 300 * 10, 400 * 10])  # back to absolute µm voxels
+
+
+def test_ccf_mm_to_plane_point_inverts():
+    pi, res = (0, 2, 1), 10  # coronal
+    for plane_num, x, y in [(540, 400, 300), (700, 123, 456), (200, 1000, 50)]:
+        ccf = core.plane_point_to_ccf_mm(plane_num, x, y, project_index=pi, resolution=res)
+        p2, x2, y2 = core.ccf_mm_to_plane_point(ccf, project_index=pi, resolution=res)
+        assert np.allclose([p2, x2, y2], [plane_num, x, y])

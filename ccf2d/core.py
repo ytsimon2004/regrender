@@ -18,7 +18,8 @@ from neuralib.atlas.typing import PLANE_TYPE
 
 __all__ = [
     'read_oriented', 'rotate', 'to_uint8', 'boundary_mask', 'region_name',
-    'estimate_transform', 'save_transform', 'plane_point_to_ccf_mm', 'TerminalLog',
+    'estimate_transform', 'save_transform', 'plane_point_to_ccf_mm', 'ccf_mm_to_plane_point',
+    'TerminalLog',
 ]
 
 
@@ -157,11 +158,12 @@ def save_transform(matrix: np.ndarray, *,
 
 # --- probe reconstruction --------------------------------------------------
 
-def plane_point_to_ccf_mm(plane_num: float, x: float, y: float, *,
-                          project_index: tuple[int, int, int],
-                          resolution: int,
-                          bregma_10um: tuple[int, int, int] = (540, 0, 570),
-                          ) -> tuple[float, float, float]:
+def plane_point_to_ccf_mm(
+        plane_num: float, x: float, y: float, *,
+        project_index: tuple[int, int, int],
+        resolution: int,
+        bregma_10um: tuple[int, int, int] = (540, 0, 570),
+) -> tuple[float, float, float]:
     """A clicked atlas-plane pixel ``(x, y)`` on plane number ``plane_num`` -> bregma-relative
     CCF ``(AP, DV, ML)`` in mm.
 
@@ -178,6 +180,25 @@ def plane_point_to_ccf_mm(plane_num: float, x: float, y: float, *,
     pidx, xidx, yidx = project_index
     idx = [0.0, 0.0, 0.0]
     idx[pidx], idx[xidx], idx[yidx] = plane_num, x, y
-    ap, dv, ml = (v * resolution for v in idx)      # voxel -> µm (absolute)
-    bap, bdv, bml = (b * 10 for b in bregma_10um)   # 10µm voxel -> µm
+    ap, dv, ml = (v * resolution for v in idx)  # voxel -> µm (absolute)
+    bap, bdv, bml = (b * 10 for b in bregma_10um)  # 10µm voxel -> µm
     return (bap - ap) / 1000, (dv - bdv) / 1000, (bml - ml) / 1000
+
+
+def ccf_mm_to_plane_point(
+        ccf: tuple[float, float, float], *,
+        project_index: tuple[int, int, int],
+        resolution: int,
+        bregma_10um: tuple[int, int, int] = (540, 0, 570),
+) -> tuple[float, float, float]:
+    """Inverse of :func:`plane_point_to_ccf_mm`: bregma-relative CCF ``(AP, DV, ML)`` mm ->
+    ``(plane_num, x, y)`` in atlas voxels. Lets a saved coordinate be re-placed on a slice
+    (the cross belongs on the slice whose ``plane_offset`` at ``(y, x)`` equals ``plane_num``).
+    """
+    ap_mm, dv_mm, ml_mm = ccf
+    bap, bdv, bml = (b * 10 for b in bregma_10um)  # 10µm voxel -> µm
+    idx = [(bap - ap_mm * 1000) / resolution,  # AP, DV, ML voxel indices
+           (dv_mm * 1000 + bdv) / resolution,
+           (bml - ml_mm * 1000) / resolution]
+    pidx, xidx, yidx = project_index
+    return idx[pidx], idx[xidx], idx[yidx]

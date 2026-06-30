@@ -14,7 +14,8 @@ from neuralib.atlas.util import ALLEN_CCF_10um_BREGMA
 from neuralib.atlas.view import get_slice_view
 from neuralib.util.verbose import fprint, print_save
 
-from ccf2d.core import TerminalLog, boundary_mask, plane_point_to_ccf_mm, read_oriented, region_name, rotate
+from ccf2d.core import (TerminalLog, boundary_mask, ccf_mm_to_plane_point, plane_point_to_ccf_mm,
+                        read_oriented, region_name, rotate)
 
 __all__ = ['ProbeOptions']
 
@@ -91,7 +92,8 @@ class ProbeOptions(AbstractParser):
 
     def _launch_napari(self, files: list[Path]):
         import napari
-        from magicgui.widgets import ComboBox, Container, Label, PushButton, Select, SpinBox
+        from magicgui.widgets import (ComboBox, Container, Label, LineEdit, PushButton,
+                                      Select, SpinBox)
 
         viewer = napari.Viewer(title='ccf2d probe')
         viewer.text_overlay.visible = True
@@ -101,11 +103,14 @@ class ProbeOptions(AbstractParser):
         from napari.utils import Colormap
 
         bg = BrainGlobeAtlas('allen_mouse_10um')
-        acronyms = sorted(bg.structures.acronym_to_id_map)  # region picker drives the brainrender
+        # region picker drives the brainrender; show "ACR — full name" but keep the acronym as value
+        region_pairs = [(f"{a} — {bg.structures[a]['name']}", a)
+                        for a in sorted(bg.structures.acronym_to_id_map)]
 
         # pts[(shank, 'dorsal'|'ventral')] = (AP, DV, ML) in bregma-relative mm
-        state: dict = {'pts': {}, 'files': files, 'cursor': 0, 'plane': None, 'view': None,
-                       'plane_off': None, 'name': None, 'ann_img': None, 'hover_id': None}
+        state: dict = {'pts': {}, 'files': files, 'cursor': 0, 'plane': None,
+                       'view': None, 'plane_off': None, 'name': None, 'ann_img': None, 'hover_id': None}
+        # pts[(shank, point)] = (AP, DV, ML) mm; crosses are reconstructed from these per slice
 
         warped_layer = None  # created on first load (re-created to switch grayscale<->RGB safely)
         bound_layer = viewer.add_image(np.zeros((10, 10)), name='boundaries',
@@ -139,6 +144,7 @@ class ProbeOptions(AbstractParser):
         status.value = 'load a registered slice to begin'
         summary = Label(value='')
         summary.native.setWordWrap(True)
+        summary.native.setStyleSheet('font-family: Menlo, Consolas, monospace; font-size: 12px;')
 
         views: dict = {}  # cache (plane, res) -> (reference_view, annotation_view); volume load is slow
 
@@ -148,6 +154,19 @@ class ProbeOptions(AbstractParser):
                 views[key] = (get_slice_view('reference', plane, resolution=res),
                               get_slice_view('annotation', plane, resolution=res))
             return views[key]
+
+        def redraw_crosses():
+            # reconstruct each point's pixel from its CCF coord; show it if it lands on this slice
+            view, off = state['view'], state['plane_off']
+            here = []
+            if view is not None and off is not None:
+                for ccf in state['pts'].values():
+                    plane, x, y = ccf_mm_to_plane_point(ccf, project_index=view.project_index,
+                                                        resolution=view.resolution)
+                    xi, yi = int(round(x)), int(round(y))
+                    if 0 <= yi < off.shape[0] and 0 <= xi < off.shape[1] and abs(off[yi, xi] - plane) <= 1:
+                        here.append([y, x])
+            click_layer.data = np.array(here) if here else np.empty((0, 2))
 
         def load_slice(img: Path):
             tp = self._transform_path(img)
@@ -173,20 +192,44 @@ class ProbeOptions(AbstractParser):
             set_histology(trans)
             bound_layer.data = boundary_mask(ann_img)
             highlight_layer.data = np.zeros(ann_img.shape, dtype=float)  # stale on plane change
-            click_layer.data = np.empty((0, 2))
+            redraw_crosses()  # restore crosses picked on this slice (e.g. after CSV reload)
             reorder()
             viewer.reset_view()  # camera was fitted to the tiny placeholder; refit to the slice
             status.value = f'{img.name}: click the dye, marking {mark_w.value} of shank {shank_w.value}'
 
         def refresh_summary():
-            if not state['pts']:
+            pts = state['pts']
+            if not pts:
                 summary.value = 'no points yet'
                 return
-            rows = []
-            for shank in sorted({s for s, _ in state['pts']}):
-                have = [p for (s, p) in state['pts'] if s == shank]
-                rows.append(f'shank {shank}: ' + ', '.join(sorted(have)))
-            summary.value = '\n'.join(rows)
+            rows = ['<tr><th>shank</th><th>point</th><th>AP</th><th>DV</th><th>ML</th></tr>']
+            for shank in sorted({s for s, _ in pts}):
+                for point in ('dorsal', 'ventral'):
+                    if (shank, point) in pts:
+                        ap, dv, ml = pts[(shank, point)]
+                        # shank number is a link: click to remove the whole shank
+                        rows.append(f'<tr><td align="center"><a href="del:{shank}">{shank} ✕</a></td>'
+                                    f'<td>{point}</td><td align="right">{ap:.2f}</td>'
+                                    f'<td align="right">{dv:.2f}</td><td align="right">{ml:.2f}</td></tr>')
+            summary.value = ('<table border=1 cellspacing=0 cellpadding=4>' + ''.join(rows)
+                             + '</table><br><i>AP, DV, ML in mm · click a shank ✕ to remove it</i>')
+
+        def on_table_link(href: str):
+            if not href.startswith('del:'):
+                return
+            shank = int(href.split(':', 1)[1])
+            from qtpy.QtWidgets import QMessageBox
+            if QMessageBox.question(None, 'Remove shank?',
+                                    f'Remove shank {shank} (both points)?') != QMessageBox.Yes:
+                return
+            for point in ('dorsal', 'ventral'):
+                state['pts'].pop((shank, point), None)
+            refresh_summary()
+            redraw_crosses()
+            status.value = f'removed shank {shank}'
+
+        summary.native.setOpenExternalLinks(False)
+        summary.native.linkActivated.connect(on_table_link)
 
         @viewer.mouse_drag_callbacks.append
         def on_click(_v, event):
@@ -207,7 +250,7 @@ class ProbeOptions(AbstractParser):
                                         bregma_10um=tuple(ALLEN_CCF_10um_BREGMA))
             key = (int(shank_w.value), _POINT[mark_w.value])
             state['pts'][key] = ccf
-            click_layer.add(np.array([[y, x]]))
+            redraw_crosses()
             status.value = (f'shank {shank_w.value} {mark_w.value} -> '
                             f'AP {ccf[0]:.2f}, DV {ccf[1]:.2f}, ML {ccf[2]:.2f} mm')
             refresh_summary()
@@ -227,7 +270,48 @@ class ProbeOptions(AbstractParser):
 
         shank_w = SpinBox(label='shank', value=1, min=1, max=64)
         mark_w = ComboBox(label='marking', choices=list(MARKS), value=MARKS[0])
-        region_w = Select(label='regions', choices=acronyms)  # multi-select; passed to brainrender
+        search_w = LineEdit(label='filter')
+        region_w = Select(label='regions', choices=region_pairs)  # multi-select; passed to brainrender
+        # selection is tracked here, not in the widget, so filtered-out picks survive (magicgui can
+        # only hold values present in its current choices). the list shows ONLY the filter matches.
+        selected_regions: set[str] = set()
+        _filtering = {'on': False}  # guard: ignore widget events while we rebuild it
+
+        def sync_selection(*_):
+            if _filtering['on']:
+                return
+            shown = set(region_w.choices)  # only the currently visible ones can change
+            selected_regions.difference_update(shown)
+            selected_regions.update(region_w.value)
+
+        def apply_filter(*_):
+            q = search_w.value.strip().lower()
+            pairs = [p for p in region_pairs if q in p[0].lower()] if q else list(region_pairs)
+            shown = {p[1] for p in pairs}
+            _filtering['on'] = True
+            region_w.choices = pairs
+            region_w.value = [v for v in selected_regions if v in shown]
+            _filtering['on'] = False
+
+        region_w.changed.connect(sync_selection)
+        search_w.changed.connect(apply_filter)
+
+        _COLORS = ['red', 'salmon', 'darkred', 'cyan', 'yellow', 'magenta',
+                   'lime', 'green', 'blue', 'orange', 'white', 'black']
+        shank_colors: dict[int, str] = {}  # shank -> dye color; default red
+
+        # per-shank dye color: pick a shank (above), then set its color here
+        probe_color_w = ComboBox(label='shank color', choices=_COLORS, value='red')
+        region_color_w = ComboBox(label='region color', choices=['(atlas)', *_COLORS], value='(atlas)')
+
+        def store_shank_color(*_):
+            shank_colors[int(shank_w.value)] = probe_color_w.value
+
+        def show_shank_color(*_):
+            probe_color_w.value = shank_colors.get(int(shank_w.value), 'red')
+
+        probe_color_w.changed.connect(store_shank_color)
+        shank_w.changed.connect(show_shank_color)
 
         _CSV_COLS = {'AP_location', 'DV_location', 'ML_location', 'probe_idx', 'point'}
 
@@ -244,6 +328,7 @@ class ProbeOptions(AbstractParser):
                 state['pts'][(int(r['probe_idx']), r['point'])] = (
                     r['AP_location'], r['DV_location'], r['ML_location'])
             refresh_summary()
+            redraw_crosses()  # crosses are reconstructed from the loaded coordinates
             status.value = f'loaded {len({s for s, _ in state["pts"]})} shank(s) from {path.name}'
 
         def save_csv() -> Path | None:
@@ -271,27 +356,25 @@ class ProbeOptions(AbstractParser):
             if csv is None:
                 return
             plane = state['plane'] or 'coronal'
+            shanks = sorted({s for s, _ in state['pts']})  # same order as the saved CSV rows
+            colors = ','.join(shank_colors.get(s, 'red') for s in shanks)  # one per shank
             cmd = [sys.executable, '-m', 'neuralib.atlas.brainrender.probe',
-                   '--file', str(csv), '--plane-type', plane]
+                   '--file', str(csv), '--plane-type', plane, '--probe-color', colors]
             if self.depth is None:
                 cmd.append('--dye')
             else:
                 cmd += ['--depth', str(self.depth)]
                 if self.interval is not None:
                     cmd += ['--interval', str(self.interval)]
-            if region_w.value:  # show the selected atlas regions as 3D meshes too
-                cmd += ['--region', ','.join(region_w.value)]
-            status.value = (f'rendering with brainrender (separate window)'
-                            + (f' + {len(region_w.value)} region(s)' if region_w.value else '') + '...')
+            regions = sorted(selected_regions)
+            if regions:  # show the selected atlas regions as 3D meshes too
+                cmd += ['--region', ','.join(regions)]
+                if region_color_w.value != '(atlas)':  # one color applied to every selected region
+                    cmd += ['--region-color', ','.join([region_color_w.value] * len(regions))]
+            status.value = (f'rendering ({len(shanks)} shank(s): {colors}'
+                            + (f', {len(regions)} region(s)' if regions else '')
+                            + ') in a separate window...')
             subprocess.Popen(cmd)
-
-        def on_undo_shank():
-            for point in ('ventral', 'dorsal'):
-                if (int(shank_w.value), point) in state['pts']:
-                    del state['pts'][(int(shank_w.value), point)]
-                    status.value = f'removed shank {shank_w.value} {point}'
-                    break
-            refresh_summary()
 
         def step(delta: int):
             files = state['files']
@@ -305,8 +388,7 @@ class ProbeOptions(AbstractParser):
         prev_btn.changed.connect(lambda *_: step(-1))
         next_btn = PushButton(text='Next slice ▶')
         next_btn.changed.connect(lambda *_: step(+1))
-        undo_btn = PushButton(text='Undo this shank')
-        undo_btn.changed.connect(lambda *_: on_undo_shank())
+
         def on_load_csv():
             from qtpy.QtWidgets import QFileDialog
             path, _ = QFileDialog.getOpenFileName(caption='Load probe points CSV',
@@ -331,10 +413,10 @@ class ProbeOptions(AbstractParser):
 
         panel = Container(widgets=[
             header('Slice'), srow(prev_btn, next_btn),
-            header('Dye point'), shank_w, mark_w, undo_btn,
-            header('Atlas regions'), region_w,
+            header('Dye point'), shank_w, mark_w, probe_color_w,
             header('Accumulated'), summary,
-            header('Output'), srow(load_btn, save_btn), render_btn,
+            header('Render'), search_w, region_w, region_color_w, render_btn,
+            header('CSV'), srow(load_btn, save_btn),
             status_label,
         ])
         viewer.window.add_dock_widget(panel, area='right', name='probe')
