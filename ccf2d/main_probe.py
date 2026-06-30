@@ -270,39 +270,51 @@ class ProbeOptions(AbstractParser):
 
         shank_w = SpinBox(label='shank', value=1, min=1, max=64)
         mark_w = ComboBox(label='marking', choices=list(MARKS), value=MARKS[0])
-        search_w = LineEdit(label='filter')
-        region_w = Select(label='regions', choices=region_pairs)  # multi-select; passed to brainrender
-        # selection is tracked here, not in the widget, so filtered-out picks survive (magicgui can
-        # only hold values present in its current choices). the list shows ONLY the filter matches.
-        selected_regions: set[str] = set()
-        _filtering = {'on': False}  # guard: ignore widget events while we rebuild it
+        _COLORS = ['red', 'salmon', 'darkred', 'cyan', 'yellow', 'magenta',
+                   'lime', 'green', 'blue', 'orange', 'white', 'black']
 
-        def sync_selection(*_):
-            if _filtering['on']:
-                return
-            shown = set(region_w.choices)  # only the currently visible ones can change
-            selected_regions.difference_update(shown)
-            selected_regions.update(region_w.value)
+        # atlas regions to render: pick region(s) in the (filterable) list, choose a color, Add.
+        # region_colors keeps each region with its own color, in render order.
+        region_colors: dict[str, str] = {}
+        search_w = LineEdit(label='filter')
+        region_w = Select(label='regions', choices=region_pairs)
+        region_color_w = ComboBox(label='color', choices=_COLORS, value='red')
+        add_region_btn = PushButton(text='+ Add region(s)')
+        region_lbl = Label(value='no regions')
+        region_lbl.native.setOpenExternalLinks(False)
 
         def apply_filter(*_):
             q = search_w.value.strip().lower()
-            pairs = [p for p in region_pairs if q in p[0].lower()] if q else list(region_pairs)
-            shown = {p[1] for p in pairs}
-            _filtering['on'] = True
-            region_w.choices = pairs
-            region_w.value = [v for v in selected_regions if v in shown]
-            _filtering['on'] = False
+            region_w.choices = [p for p in region_pairs if q in p[0].lower()] if q else list(region_pairs)
 
-        region_w.changed.connect(sync_selection)
+        def refresh_region_table():
+            if not region_colors:
+                region_lbl.value = 'no regions'
+                return
+            rows = ['<tr><th>region</th><th>color</th></tr>']
+            for acr, c in region_colors.items():
+                rows.append(f'<tr><td><a href="rdel:{acr}">{acr} ✕</a></td>'
+                            f'<td><font color="{c}">■</font> {c}</td></tr>')
+            region_lbl.value = '<table border=1 cellspacing=0 cellpadding=3>' + ''.join(rows) + '</table>'
+
+        def add_regions(*_):
+            for acr in region_w.value:
+                region_colors[acr] = region_color_w.value  # add or recolor
+            refresh_region_table()
+
+        def on_region_link(href: str):
+            if href.startswith('rdel:'):
+                region_colors.pop(href[len('rdel:'):], None)
+                refresh_region_table()
+
         search_w.changed.connect(apply_filter)
-
-        _COLORS = ['red', 'salmon', 'darkred', 'cyan', 'yellow', 'magenta',
-                   'lime', 'green', 'blue', 'orange', 'white', 'black']
-        shank_colors: dict[int, str] = {}  # shank -> dye color; default red
+        add_region_btn.changed.connect(add_regions)
+        region_lbl.native.linkActivated.connect(on_region_link)
+        refresh_region_table()
 
         # per-shank dye color: pick a shank (above), then set its color here
+        shank_colors: dict[int, str] = {}  # shank -> dye color; default red
         probe_color_w = ComboBox(label='shank color', choices=_COLORS, value='red')
-        region_color_w = ComboBox(label='region color', choices=['(atlas)', *_COLORS], value='(atlas)')
 
         def store_shank_color(*_):
             shank_colors[int(shank_w.value)] = probe_color_w.value
@@ -366,11 +378,10 @@ class ProbeOptions(AbstractParser):
                 cmd += ['--depth', str(self.depth)]
                 if self.interval is not None:
                     cmd += ['--interval', str(self.interval)]
-            regions = sorted(selected_regions)
-            if regions:  # show the selected atlas regions as 3D meshes too
+            regions = list(region_colors)  # insertion order = render order
+            if regions:  # show the added atlas regions as 3D meshes, each with its own color
                 cmd += ['--region', ','.join(regions)]
-                if region_color_w.value != '(atlas)':  # one color applied to every selected region
-                    cmd += ['--region-color', ','.join([region_color_w.value] * len(regions))]
+                cmd += ['--region-color', ','.join(region_colors[r] for r in regions)]
             status.value = (f'rendering ({len(shanks)} shank(s): {colors}'
                             + (f', {len(regions)} region(s)' if regions else '')
                             + ') in a separate window...')
@@ -415,7 +426,8 @@ class ProbeOptions(AbstractParser):
             header('Slice'), srow(prev_btn, next_btn),
             header('Dye point'), shank_w, mark_w, probe_color_w,
             header('Accumulated'), summary,
-            header('Render'), search_w, region_w, region_color_w, render_btn,
+            header('Render'), search_w, region_w, srow(region_color_w, add_region_btn),
+            region_lbl, render_btn,
             header('CSV'), srow(load_btn, save_btn),
             status_label,
         ])
