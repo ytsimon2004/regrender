@@ -55,12 +55,18 @@ def _region_table_html(region_colors: dict[str, str]) -> str:
     return '<table border=1 cellspacing=0 cellpadding=3>' + ''.join(rows) + '</table>'
 
 
+SHADER_STYLES = ['plastic', 'cartoon', 'metallic', 'shiny', 'glossy']
+
+
 def _render_command(csv: Path, plane: str, shanks: list[int], shank_colors: dict[int, str],
-                    region_colors: dict[str, str], depth: int | None, interval: int | None) -> list[str]:
+                    region_colors: dict[str, str], depth: int | None, interval: int | None,
+                    style: str = 'plastic', no_root: bool = False, hemisphere: str = 'both') -> list[str]:
     """``ProbeRenderCLI`` argv: per-shank dye colors, optional theoretical track, region meshes."""
     cmd = [sys.executable, '-m', 'neuralib.atlas.brainrender.probe',
-           '--file', str(csv), '--plane-type', plane,
+           '--file', str(csv), '--plane-type', plane, '--style', style, '--hemisphere', hemisphere,
            '--probe-color', ','.join(shank_colors.get(s, 'red') for s in shanks)]
+    if no_root:
+        cmd.append('--no-root')
     if depth is None:
         cmd.append('--dye')
     else:
@@ -142,7 +148,7 @@ class ProbeOptions(AbstractParser):
     def _launch_napari(self, files: list[Path]):
         import napari
         from napari.utils import Colormap
-        from magicgui.widgets import (ComboBox, Container, Label, LineEdit, PushButton,
+        from magicgui.widgets import (CheckBox, ComboBox, Container, Label, LineEdit, PushButton,
                                       Select, SpinBox)
 
         viewer = napari.Viewer(title='ccf2d probe')
@@ -187,11 +193,15 @@ class ProbeOptions(AbstractParser):
             'font-family: Menlo, Consolas, monospace; font-size: 12px; '
             'color: #b9f27c; background: #11131a; padding: 6px;')
         status_label.native.setWordWrap(True)
+        from qtpy.QtWidgets import QSizePolicy
+        status_label.native.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         status = TerminalLog(status_label)
         status.value = 'load a registered slice to begin'
         summary = Label(value='')
         summary.native.setWordWrap(True)
         summary.native.setStyleSheet('font-family: Menlo, Consolas, monospace; font-size: 12px;')
+        slice_lbl = Label(value='no slice loaded')  # current file (i/N) shown in the Slice section
+        slice_lbl.native.setWordWrap(True)
 
         views: dict = {}  # cache (plane, res) -> (reference_view, annotation_view); volume load is slow
 
@@ -242,6 +252,9 @@ class ProbeOptions(AbstractParser):
             redraw_crosses()  # restore crosses picked on this slice (e.g. after CSV reload)
             reorder()
             viewer.reset_view()  # camera was fitted to the tiny placeholder; refit to the slice
+            files = state['files']
+            pos = f'{state["cursor"] + 1}/{len(files)}  ' if files else ''
+            slice_lbl.value = f'{pos}{img.name}'
             status.value = f'{img.name}: click the dye, marking {mark_w.value} of shank {shank_w.value}'
 
         def refresh_summary():
@@ -309,7 +322,11 @@ class ProbeOptions(AbstractParser):
         region_colors: dict[str, str] = {}
         search_w = LineEdit(label='filter')
         region_w = Select(label='regions', choices=region_pairs)
+        region_w.native.setMinimumHeight(240)  # show more of the 840-region list at once
         region_color_w = ComboBox(label='color', choices=_COLORS, value='red')
+        style_w = ComboBox(label='style', choices=SHADER_STYLES, value=SHADER_STYLES[0])
+        hemisphere_w = ComboBox(label='hemisphere', choices=['both', 'left', 'right'], value='both')
+        no_root_w = CheckBox(label='no root (hide brain)', value=False)
         add_region_btn = PushButton(text='+ Add region(s)')
         region_lbl = Label(value='no regions')
         region_lbl.native.setOpenExternalLinks(False)
@@ -393,11 +410,22 @@ class ProbeOptions(AbstractParser):
                 return
             shanks = sorted({s for s, _ in state['pts']})  # same order as the saved CSV rows
             cmd = _render_command(csv, state['plane'] or 'coronal', shanks, shank_colors,
-                                  region_colors, self.depth, self.interval)
+                                  region_colors, self.depth, self.interval, style_w.value,
+                                  no_root_w.value, hemisphere_w.value)
             status.value = (f'rendering ({len(shanks)} shank(s)'
                             + (f', {len(region_colors)} region(s)' if region_colors else '')
                             + ') in a separate window...')
             subprocess.Popen(cmd)
+
+        def invert_ml():
+            if not state['pts']:
+                status.value = 'no points to flip'
+                return
+            for k, (ap, dv, ml) in list(state['pts'].items()):
+                state['pts'][k] = (ap, dv, -ml)  # midline is ML=0; mirror to the other hemisphere
+            refresh_summary()
+            redraw_crosses()
+            status.value = 'flipped ML -> other hemisphere'
 
         def step(delta: int):
             files = state['files']
@@ -419,6 +447,8 @@ class ProbeOptions(AbstractParser):
             if path:
                 load_csv_points(Path(path))
 
+        invert_btn = PushButton(text='Invert ML (flip hemisphere)')
+        invert_btn.changed.connect(lambda *_: invert_ml())
         load_btn = PushButton(text='Load CSV')
         load_btn.changed.connect(lambda *_: on_load_csv())
         save_btn = PushButton(text='Save CSV')
@@ -435,15 +465,20 @@ class ProbeOptions(AbstractParser):
             return Container(widgets=list(ws), layout='horizontal', labels=False)
 
         panel = Container(widgets=[
-            header('Slice'), srow(prev_btn, next_btn),
+            header('Slice'), slice_lbl, srow(prev_btn, next_btn),
             header('Dye point'), shank_w, mark_w, probe_color_w,
-            header('Accumulated'), summary,
-            header('Render'), search_w, region_w, srow(region_color_w, add_region_btn),
-            region_lbl, render_btn,
+            header('Accumulated'), summary, invert_btn,
+            header('Regions'), search_w, region_w, srow(region_color_w, add_region_btn), region_lbl,
+            header('Render'), srow(style_w, hemisphere_w), no_root_w, render_btn,
             header('CSV'), srow(load_btn, save_btn),
             status_label,
         ])
-        viewer.window.add_dock_widget(panel, area='right', name='probe')
+        from qtpy.QtWidgets import QScrollArea
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)  # panel fills the dock width; scrolls vertically when tall
+        scroll.setWidget(panel.native)
+        scroll.setMinimumWidth(360)  # start the sidebar wide enough for the tables/region list
+        viewer.window.add_dock_widget(scroll, area='right', name='probe')
 
         if state['files']:
             load_slice(state['files'][0])

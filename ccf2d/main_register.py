@@ -283,6 +283,8 @@ class RegisterOptions(AbstractParser):
                     f"dw {state['dw'] * res} µm, dh {state['dh'] * res} µm")
 
         info_w = Label(value=info_text())
+        img_lbl = Label(value='no image loaded')  # current file (i/N) shown in the Image section
+        img_lbl.native.setWordWrap(True)
         # scrolling terminal-style log: every status.value = msg appends a line (monospace)
         status_label = Label(value='')
         status_label.native.setStyleSheet(
@@ -492,6 +494,9 @@ class RegisterOptions(AbstractParser):
             set_histology(state['hist'])
             on_clear()
             viewer.title = f'ccf2d register — {state["name"]}'
+            files = state['files']
+            pos = f'{files.index(p) + 1}/{len(files)}  ' if p in files else ''
+            img_lbl.value = f'{pos}{p.name}'
             js = state['out_dir'] / f'{p.stem}_transform.json'
             if js.exists():
                 restore_from_meta(json.loads(js.read_text()))
@@ -567,7 +572,7 @@ class RegisterOptions(AbstractParser):
 
         panel = Container(
             widgets=[
-                header('Image'), load_btn, load_dir_btn, row(prev_btn, next_btn),
+                header('Image'), img_lbl, load_btn, load_dir_btn, row(prev_btn, next_btn),
                 header('Atlas plane'), plane_w, idx_w, dw_w, dh_w, info_w,
                 header('Orientation'), rot_w, flip_lr_w, flip_ud_w,
                 header('Display'), grid_w, color_w,
