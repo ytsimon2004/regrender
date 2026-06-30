@@ -7,6 +7,7 @@ helpers. The napari front-ends live in the ``main_*`` modules.
 from __future__ import annotations
 
 import json
+from collections import deque
 from pathlib import Path
 from typing import Any
 
@@ -17,8 +18,26 @@ from neuralib.atlas.typing import PLANE_TYPE
 
 __all__ = [
     'read_oriented', 'rotate', 'to_uint8', 'boundary_mask', 'region_name',
-    'estimate_transform', 'save_transform', 'plane_point_to_ccf_mm',
+    'estimate_transform', 'save_transform', 'plane_point_to_ccf_mm', 'TerminalLog',
 ]
+
+
+class TerminalLog:
+    """Append-only view over a magicgui Label so ``status.value = msg`` scrolls like a terminal
+    (keeps the last ``maxlines`` messages) instead of replacing a single line."""
+
+    def __init__(self, label, maxlines: int = 12):
+        self._label = label
+        self._lines: deque[str] = deque(maxlen=maxlines)
+
+    @property
+    def value(self) -> str:
+        return '\n'.join(self._lines)
+
+    @value.setter
+    def value(self, msg: str):
+        self._lines.append(f'> {msg}')
+        self._label.value = '\n'.join(self._lines)
 
 
 # --- image preprocessing ---------------------------------------------------

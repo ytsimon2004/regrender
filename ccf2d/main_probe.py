@@ -14,7 +14,7 @@ from neuralib.atlas.util import ALLEN_CCF_10um_BREGMA
 from neuralib.atlas.view import get_slice_view
 from neuralib.util.verbose import fprint, print_save
 
-from ccf2d.core import boundary_mask, plane_point_to_ccf_mm, read_oriented, rotate
+from ccf2d.core import TerminalLog, boundary_mask, plane_point_to_ccf_mm, read_oriented, region_name, rotate
 
 __all__ = ['ProbeOptions']
 
@@ -91,34 +91,63 @@ class ProbeOptions(AbstractParser):
 
     def _launch_napari(self, files: list[Path]):
         import napari
-        from magicgui.widgets import ComboBox, Container, Label, PushButton, SpinBox
+        from magicgui.widgets import ComboBox, Container, Label, PushButton, Select, SpinBox
 
         viewer = napari.Viewer(title='ccf2d probe')
         viewer.text_overlay.visible = True
+        viewer.text_overlay.font_size = 18
+        viewer.text_overlay.color = 'yellow'
+
+        from napari.utils import Colormap
+
+        bg = BrainGlobeAtlas('allen_mouse_10um')
+        acronyms = sorted(bg.structures.acronym_to_id_map)  # region picker drives the brainrender
 
         # pts[(shank, 'dorsal'|'ventral')] = (AP, DV, ML) in bregma-relative mm
         state: dict = {'pts': {}, 'files': files, 'cursor': 0, 'plane': None, 'view': None,
-                       'plane_off': None, 'name': None}
+                       'plane_off': None, 'name': None, 'ann_img': None, 'hover_id': None}
 
         warped_layer = None  # created on first load (re-created to switch grayscale<->RGB safely)
         bound_layer = viewer.add_image(np.zeros((10, 10)), name='boundaries',
                                        colormap='red', blending='additive', opacity=0.7)
+        hcmap = Colormap([[0, 0, 0], [0.3, 0.6, 1.0]], name='highlight')  # region-under-cursor fill
+        highlight_layer = viewer.add_image(np.zeros((10, 10), dtype=float), name='region_highlight',
+                                           colormap=hcmap, blending='additive', opacity=0.4)
         click_layer = viewer.add_points(name='clicks', face_color='cyan', symbol='cross',
                                         size=20, ndim=2)
 
         def set_histology(img: np.ndarray):
-            # napari can't flip grayscale<->RGB in place; re-create and keep it at the bottom
+            # napari can't flip grayscale<->RGB in place; re-create it (reorder() puts it at bottom)
             nonlocal warped_layer
             if warped_layer is not None and warped_layer in viewer.layers:
                 viewer.layers.remove(warped_layer)
             warped_layer = viewer.add_image(img, name='histology', colormap='gray')
-            viewer.layers.move(viewer.layers.index(warped_layer), 0)
 
-        status = Label(value='load a registered slice to begin')
-        status.native.setStyleSheet('font-size: 14px; font-weight: bold; color: #ffcc00;')
-        status.native.setWordWrap(True)
+        def reorder():
+            # bottom -> top: histology, hover highlight, atlas boundaries, click points
+            stack = [warped_layer, highlight_layer, bound_layer, click_layer]
+            for i, lyr in enumerate(l for l in stack if l is not None and l in viewer.layers):
+                viewer.layers.move(viewer.layers.index(lyr), i)
+
+        # scrolling terminal-style log (same as register): every status.value = msg appends a line
+        status_label = Label(value='')
+        status_label.native.setStyleSheet(
+            'font-family: Menlo, Consolas, monospace; font-size: 12px; '
+            'color: #b9f27c; background: #11131a; padding: 6px;')
+        status_label.native.setWordWrap(True)
+        status = TerminalLog(status_label)
+        status.value = 'load a registered slice to begin'
         summary = Label(value='')
         summary.native.setWordWrap(True)
+
+        views: dict = {}  # cache (plane, res) -> (reference_view, annotation_view); volume load is slow
+
+        def get_views(plane: str, res: int):
+            key = (plane, res)
+            if key not in views:
+                views[key] = (get_slice_view('reference', plane, resolution=res),
+                              get_slice_view('annotation', plane, resolution=res))
+            return views[key]
 
         def load_slice(img: Path):
             tp = self._transform_path(img)
@@ -134,15 +163,19 @@ class ProbeOptions(AbstractParser):
             _, trans = slice_transform_helper(oimg, np.array(meta['matrix'], float), plane_type=plane)
 
             od = lambda v: v + 1 if v != 0 else 0
-            view = get_slice_view('reference', plane, resolution=res)
-            ann = get_slice_view('annotation', plane, resolution=res)
+            view, ann = get_views(plane, res)  # cached: avoids reloading atlas volumes per slice
             sp = view.plane_at(idx).with_offset(od(dw), od(dh))
             ann_sp = ann.plane_at(idx).with_offset(od(dw), od(dh))
 
-            state.update(plane=plane, view=view, plane_off=sp.plane_offset, name=img.stem)
+            ann_img = ann_sp.image
+            state.update(plane=plane, view=view, plane_off=sp.plane_offset, name=img.stem,
+                         ann_img=ann_img, hover_id=None)
             set_histology(trans)
-            bound_layer.data = boundary_mask(ann_sp.image)
+            bound_layer.data = boundary_mask(ann_img)
+            highlight_layer.data = np.zeros(ann_img.shape, dtype=float)  # stale on plane change
             click_layer.data = np.empty((0, 2))
+            reorder()
+            viewer.reset_view()  # camera was fitted to the tiny placeholder; refit to the slice
             status.value = f'{img.name}: click the dye, marking {mark_w.value} of shank {shank_w.value}'
 
         def refresh_summary():
@@ -179,8 +212,39 @@ class ProbeOptions(AbstractParser):
                             f'AP {ccf[0]:.2f}, DV {ccf[1]:.2f}, ML {ccf[2]:.2f} mm')
             refresh_summary()
 
+        @viewer.mouse_move_callbacks.append
+        def on_move(_v, event):
+            ann = state['ann_img']
+            if ann is None:
+                return
+            y, x = event.position
+            viewer.text_overlay.text = region_name(ann, bg.structures, y, x)
+            rid = (int(ann[int(y), int(x)])
+                   if 0 <= y < ann.shape[0] and 0 <= x < ann.shape[1] else 0)
+            if rid != state['hover_id']:
+                state['hover_id'] = rid
+                highlight_layer.data = (ann == rid).astype(float) if rid else np.zeros(ann.shape)
+
         shank_w = SpinBox(label='shank', value=1, min=1, max=64)
         mark_w = ComboBox(label='marking', choices=list(MARKS), value=MARKS[0])
+        region_w = Select(label='regions', choices=acronyms)  # multi-select; passed to brainrender
+
+        _CSV_COLS = {'AP_location', 'DV_location', 'ML_location', 'probe_idx', 'point'}
+
+        def load_csv_points(path: Path):
+            try:
+                df = pl.read_csv(path)
+            except Exception as e:  # noqa: BLE001 - surface any read error in the GUI
+                status.value = f'could not read {path.name}: {e}'
+                return
+            if not _CSV_COLS <= set(df.columns):
+                status.value = f'{path.name}: not a probe CSV (needs {", ".join(sorted(_CSV_COLS))})'
+                return
+            for r in df.iter_rows(named=True):
+                state['pts'][(int(r['probe_idx']), r['point'])] = (
+                    r['AP_location'], r['DV_location'], r['ML_location'])
+            refresh_summary()
+            status.value = f'loaded {len({s for s, _ in state["pts"]})} shank(s) from {path.name}'
 
         def save_csv() -> Path | None:
             shanks = sorted({s for s, _ in state['pts']})
@@ -215,7 +279,10 @@ class ProbeOptions(AbstractParser):
                 cmd += ['--depth', str(self.depth)]
                 if self.interval is not None:
                     cmd += ['--interval', str(self.interval)]
-            status.value = 'rendering with brainrender (separate window)...'
+            if region_w.value:  # show the selected atlas regions as 3D meshes too
+                cmd += ['--region', ','.join(region_w.value)]
+            status.value = (f'rendering with brainrender (separate window)'
+                            + (f' + {len(region_w.value)} region(s)' if region_w.value else '') + '...')
             subprocess.Popen(cmd)
 
         def on_undo_shank():
@@ -240,6 +307,15 @@ class ProbeOptions(AbstractParser):
         next_btn.changed.connect(lambda *_: step(+1))
         undo_btn = PushButton(text='Undo this shank')
         undo_btn.changed.connect(lambda *_: on_undo_shank())
+        def on_load_csv():
+            from qtpy.QtWidgets import QFileDialog
+            path, _ = QFileDialog.getOpenFileName(caption='Load probe points CSV',
+                                                  filter='CSV (*.csv);;All files (*)')
+            if path:
+                load_csv_points(Path(path))
+
+        load_btn = PushButton(text='Load CSV')
+        load_btn.changed.connect(lambda *_: on_load_csv())
         save_btn = PushButton(text='Save CSV')
         save_btn.changed.connect(lambda *_: save_csv())
         render_btn = PushButton(text='Render (brainrender)')
@@ -256,18 +332,19 @@ class ProbeOptions(AbstractParser):
         panel = Container(widgets=[
             header('Slice'), srow(prev_btn, next_btn),
             header('Dye point'), shank_w, mark_w, undo_btn,
+            header('Atlas regions'), region_w,
             header('Accumulated'), summary,
-            header('Output'), srow(save_btn, render_btn),
-            status,
+            header('Output'), srow(load_btn, save_btn), render_btn,
+            status_label,
         ])
         viewer.window.add_dock_widget(panel, area='right', name='probe')
 
-        # touch the atlas once so structures are cached before the first click feels snappy
-        BrainGlobeAtlas('allen_mouse_10um')
         if state['files']:
             load_slice(state['files'][0])
         elif self.raw_image:
             load_slice(self.raw_image)
+        if self._out.exists():
+            load_csv_points(self._out)  # auto-resume the session CSV
         refresh_summary()
 
         fprint('probe: pick superficial+deep dye per shank (step slices as needed), then Render')

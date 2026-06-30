@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-from collections import deque
 from pathlib import Path
 
 import cv2
@@ -15,28 +14,10 @@ from neuralib.atlas.view import get_slice_view
 from neuralib.imglib.transform import apply_transformation
 from neuralib.util.verbose import fprint, print_save
 
-from ccf2d.core import (boundary_mask, estimate_transform, read_oriented, region_name,
+from ccf2d.core import (TerminalLog, boundary_mask, estimate_transform, read_oriented, region_name,
                         rotate, save_transform, to_uint8)
 
 __all__ = ['RegisterOptions']
-
-
-class TerminalLog:
-    """Append-only view over a magicgui Label so ``status.value = msg`` scrolls like a terminal
-    (keeps the last ``maxlines`` messages) instead of replacing a single line."""
-
-    def __init__(self, label, maxlines: int = 12):
-        self._label = label
-        self._lines: deque[str] = deque(maxlen=maxlines)
-
-    @property
-    def value(self) -> str:
-        return '\n'.join(self._lines)
-
-    @value.setter
-    def value(self, msg: str):
-        self._lines.append(f'> {msg}')
-        self._label.value = '\n'.join(self._lines)
 
 
 class RegisterOptions(AbstractParser):
