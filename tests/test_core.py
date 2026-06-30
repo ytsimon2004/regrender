@@ -116,3 +116,30 @@ def test_ccf_mm_to_plane_point_inverts():
         ccf = core.plane_point_to_ccf_mm(plane_num, x, y, project_index=pi, resolution=res)
         p2, x2, y2 = core.ccf_mm_to_plane_point(ccf, project_index=pi, resolution=res)
         assert np.allclose([p2, x2, y2], [plane_num, x, y])
+
+
+# --- probe render command (pure GUI-free builder) --------------------------
+
+def test_render_command_per_shank_and_region_colors():
+    from pathlib import Path
+    from ccf2d.main_probe import _render_command
+    cmd = _render_command(Path('p.csv'), 'coronal', shanks=[1, 2],
+                          shank_colors={1: 'red', 2: 'blue'},
+                          region_colors={'VISp': 'green', 'MOp': 'cyan'},
+                          depth=None, interval=None)
+    assert cmd[cmd.index('--probe-color') + 1] == 'red,blue'
+    assert cmd[cmd.index('--region') + 1] == 'VISp,MOp'
+    assert cmd[cmd.index('--region-color') + 1] == 'green,cyan'
+    assert '--dye' in cmd and '--depth' not in cmd  # dye-only when no depth
+
+
+def test_render_command_theoretical_track():
+    from pathlib import Path
+    from ccf2d.main_probe import _render_command
+    cmd = _render_command(Path('p.csv'), 'coronal', shanks=[1], shank_colors={},
+                          region_colors={}, depth=4000, interval=250)
+    assert '--dye' not in cmd
+    assert cmd[cmd.index('--depth') + 1] == '4000'
+    assert cmd[cmd.index('--interval') + 1] == '250'
+    assert cmd[cmd.index('--probe-color') + 1] == 'red'  # default when shank has no color
+    assert '--region' not in cmd

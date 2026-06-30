@@ -22,6 +22,55 @@ __all__ = ['ProbeOptions']
 # superficial = dorsal (top of brain, small DV); deep = ventral. ProbeRenderCLI wants dorsal first.
 MARKS = ('superficial', 'deep')
 _POINT = {'superficial': 'dorsal', 'deep': 'ventral'}
+_COLORS = ['red', 'salmon', 'darkred', 'cyan', 'yellow', 'magenta',
+           'lime', 'green', 'blue', 'orange', 'white', 'black']
+
+
+# --- pure view-models (no Qt): rendered into labels / passed to the renderer ----------------
+
+def _shank_table_html(pts: dict[tuple[int, str], tuple[float, float, float]]) -> str:
+    """HTML table of picked points; each shank number is a ``del:<n>`` link to remove it."""
+    if not pts:
+        return 'no points yet'
+    rows = ['<tr><th>shank</th><th>point</th><th>AP</th><th>DV</th><th>ML</th></tr>']
+    for shank in sorted({s for s, _ in pts}):
+        for point in ('dorsal', 'ventral'):
+            if (shank, point) in pts:
+                ap, dv, ml = pts[(shank, point)]
+                rows.append(f'<tr><td align="center"><a href="del:{shank}">{shank} ✕</a></td>'
+                            f'<td>{point}</td><td align="right">{ap:.2f}</td>'
+                            f'<td align="right">{dv:.2f}</td><td align="right">{ml:.2f}</td></tr>')
+    return ('<table border=1 cellspacing=0 cellpadding=4>' + ''.join(rows)
+            + '</table><br><i>AP, DV, ML in mm · click a shank ✕ to remove it</i>')
+
+
+def _region_table_html(region_colors: dict[str, str]) -> str:
+    """HTML table of regions to render; each acronym is a ``rdel:<acr>`` link to remove it."""
+    if not region_colors:
+        return 'no regions'
+    rows = ['<tr><th>region</th><th>color</th></tr>']
+    for acr, c in region_colors.items():
+        rows.append(f'<tr><td><a href="rdel:{acr}">{acr} ✕</a></td>'
+                    f'<td><font color="{c}">■</font> {c}</td></tr>')
+    return '<table border=1 cellspacing=0 cellpadding=3>' + ''.join(rows) + '</table>'
+
+
+def _render_command(csv: Path, plane: str, shanks: list[int], shank_colors: dict[int, str],
+                    region_colors: dict[str, str], depth: int | None, interval: int | None) -> list[str]:
+    """``ProbeRenderCLI`` argv: per-shank dye colors, optional theoretical track, region meshes."""
+    cmd = [sys.executable, '-m', 'neuralib.atlas.brainrender.probe',
+           '--file', str(csv), '--plane-type', plane,
+           '--probe-color', ','.join(shank_colors.get(s, 'red') for s in shanks)]
+    if depth is None:
+        cmd.append('--dye')
+    else:
+        cmd += ['--depth', str(depth)]
+        if interval is not None:
+            cmd += ['--interval', str(interval)]
+    if region_colors:  # insertion order = render order; each region carries its own color
+        cmd += ['--region', ','.join(region_colors)]
+        cmd += ['--region-color', ','.join(region_colors.values())]
+    return cmd
 
 
 class ProbeOptions(AbstractParser):
@@ -92,6 +141,7 @@ class ProbeOptions(AbstractParser):
 
     def _launch_napari(self, files: list[Path]):
         import napari
+        from napari.utils import Colormap
         from magicgui.widgets import (ComboBox, Container, Label, LineEdit, PushButton,
                                       Select, SpinBox)
 
@@ -100,17 +150,14 @@ class ProbeOptions(AbstractParser):
         viewer.text_overlay.font_size = 18
         viewer.text_overlay.color = 'yellow'
 
-        from napari.utils import Colormap
-
         bg = BrainGlobeAtlas('allen_mouse_10um')
         # region picker drives the brainrender; show "ACR — full name" but keep the acronym as value
         region_pairs = [(f"{a} — {bg.structures[a]['name']}", a)
                         for a in sorted(bg.structures.acronym_to_id_map)]
 
-        # pts[(shank, 'dorsal'|'ventral')] = (AP, DV, ML) in bregma-relative mm
+        # pts[(shank, 'dorsal'|'ventral')] = (AP, DV, ML) bregma-relative mm; crosses re-derived per slice
         state: dict = {'pts': {}, 'files': files, 'cursor': 0, 'plane': None,
                        'view': None, 'plane_off': None, 'name': None, 'ann_img': None, 'hover_id': None}
-        # pts[(shank, point)] = (AP, DV, ML) mm; crosses are reconstructed from these per slice
 
         warped_layer = None  # created on first load (re-created to switch grayscale<->RGB safely)
         bound_layer = viewer.add_image(np.zeros((10, 10)), name='boundaries',
@@ -198,21 +245,7 @@ class ProbeOptions(AbstractParser):
             status.value = f'{img.name}: click the dye, marking {mark_w.value} of shank {shank_w.value}'
 
         def refresh_summary():
-            pts = state['pts']
-            if not pts:
-                summary.value = 'no points yet'
-                return
-            rows = ['<tr><th>shank</th><th>point</th><th>AP</th><th>DV</th><th>ML</th></tr>']
-            for shank in sorted({s for s, _ in pts}):
-                for point in ('dorsal', 'ventral'):
-                    if (shank, point) in pts:
-                        ap, dv, ml = pts[(shank, point)]
-                        # shank number is a link: click to remove the whole shank
-                        rows.append(f'<tr><td align="center"><a href="del:{shank}">{shank} ✕</a></td>'
-                                    f'<td>{point}</td><td align="right">{ap:.2f}</td>'
-                                    f'<td align="right">{dv:.2f}</td><td align="right">{ml:.2f}</td></tr>')
-            summary.value = ('<table border=1 cellspacing=0 cellpadding=4>' + ''.join(rows)
-                             + '</table><br><i>AP, DV, ML in mm · click a shank ✕ to remove it</i>')
+            summary.value = _shank_table_html(state['pts'])
 
         def on_table_link(href: str):
             if not href.startswith('del:'):
@@ -270,8 +303,6 @@ class ProbeOptions(AbstractParser):
 
         shank_w = SpinBox(label='shank', value=1, min=1, max=64)
         mark_w = ComboBox(label='marking', choices=list(MARKS), value=MARKS[0])
-        _COLORS = ['red', 'salmon', 'darkred', 'cyan', 'yellow', 'magenta',
-                   'lime', 'green', 'blue', 'orange', 'white', 'black']
 
         # atlas regions to render: pick region(s) in the (filterable) list, choose a color, Add.
         # region_colors keeps each region with its own color, in render order.
@@ -288,14 +319,7 @@ class ProbeOptions(AbstractParser):
             region_w.choices = [p for p in region_pairs if q in p[0].lower()] if q else list(region_pairs)
 
         def refresh_region_table():
-            if not region_colors:
-                region_lbl.value = 'no regions'
-                return
-            rows = ['<tr><th>region</th><th>color</th></tr>']
-            for acr, c in region_colors.items():
-                rows.append(f'<tr><td><a href="rdel:{acr}">{acr} ✕</a></td>'
-                            f'<td><font color="{c}">■</font> {c}</td></tr>')
-            region_lbl.value = '<table border=1 cellspacing=0 cellpadding=3>' + ''.join(rows) + '</table>'
+            region_lbl.value = _region_table_html(region_colors)
 
         def add_regions(*_):
             for acr in region_w.value:
@@ -367,23 +391,11 @@ class ProbeOptions(AbstractParser):
             csv = save_csv()
             if csv is None:
                 return
-            plane = state['plane'] or 'coronal'
             shanks = sorted({s for s, _ in state['pts']})  # same order as the saved CSV rows
-            colors = ','.join(shank_colors.get(s, 'red') for s in shanks)  # one per shank
-            cmd = [sys.executable, '-m', 'neuralib.atlas.brainrender.probe',
-                   '--file', str(csv), '--plane-type', plane, '--probe-color', colors]
-            if self.depth is None:
-                cmd.append('--dye')
-            else:
-                cmd += ['--depth', str(self.depth)]
-                if self.interval is not None:
-                    cmd += ['--interval', str(self.interval)]
-            regions = list(region_colors)  # insertion order = render order
-            if regions:  # show the added atlas regions as 3D meshes, each with its own color
-                cmd += ['--region', ','.join(regions)]
-                cmd += ['--region-color', ','.join(region_colors[r] for r in regions)]
-            status.value = (f'rendering ({len(shanks)} shank(s): {colors}'
-                            + (f', {len(regions)} region(s)' if regions else '')
+            cmd = _render_command(csv, state['plane'] or 'coronal', shanks, shank_colors,
+                                  region_colors, self.depth, self.interval)
+            status.value = (f'rendering ({len(shanks)} shank(s)'
+                            + (f', {len(region_colors)} region(s)' if region_colors else '')
                             + ') in a separate window...')
             subprocess.Popen(cmd)
 
