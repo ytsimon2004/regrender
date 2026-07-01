@@ -4,7 +4,7 @@ Both modes step through registered serial sections, pick points that resolve to 
 mm, paint atlas region boundaries / the region under the cursor, pick atlas regions to render,
 and shell out to a brainrender CLI. That common plumbing lives here; each mode subclasses
 :class:`SliceReconstructOptions` and supplies only its own image display + click semantics +
-render argv. The pure (GUI-free) coordinate/image helpers stay in :mod:`ccf2d.core`.
+render argv. The pure (GUI-free) coordinate/image helpers stay in :mod:`regrender.core`.
 """
 from __future__ import annotations
 
@@ -16,7 +16,7 @@ import numpy as np
 from argclz import AbstractParser, argument
 from neuralib.atlas.view import get_slice_view
 
-from ccf2d.core import TerminalLog, region_name
+from regrender.core import TerminalLog, region_name
 
 __all__ = ['SliceReconstructOptions', 'RegionPicker']
 
@@ -123,7 +123,7 @@ class SliceReconstructOptions(AbstractParser):
         if require_transform and not self._transform_path(self.raw_image).exists():
             raise FileNotFoundError(
                 f'no native registration {self._transform_path(self.raw_image)} — '
-                f'register with `ccf2d register` first')
+                f'register with `regrender register` first')
         return files
 
     # --- shared napari helpers --------------------------------------------------

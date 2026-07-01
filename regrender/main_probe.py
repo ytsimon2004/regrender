@@ -10,9 +10,9 @@ from neuralib.atlas.ccf.matrix import slice_transform_helper
 from neuralib.atlas.util import ALLEN_CCF_10um_BREGMA
 from neuralib.util.verbose import fprint, print_save
 
-from ccf2d.core import (boundary_mask, ccf_mm_to_plane_point, load_transform, plane_point_to_ccf_mm,
+from regrender.core import (boundary_mask, ccf_mm_to_plane_point, load_transform, plane_point_to_ccf_mm,
                         read_oriented, rotate)
-from ccf2d.slice_app import RegionPicker, SliceReconstructOptions
+from regrender.slice_app import RegionPicker, SliceReconstructOptions
 
 __all__ = ['ProbeOptions']
 
@@ -82,7 +82,7 @@ class ProbeOptions(SliceReconstructOptions):
         from napari.utils import Colormap
         from magicgui.widgets import CheckBox, ComboBox, Container, Label, PushButton, SpinBox
 
-        viewer = napari.Viewer(title='ccf2d probe')
+        viewer = napari.Viewer(title='regrender probe')
         viewer.text_overlay.visible = True
         viewer.text_overlay.font_size = 18
         viewer.text_overlay.color = 'yellow'

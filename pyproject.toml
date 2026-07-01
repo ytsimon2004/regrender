@@ -1,7 +1,7 @@
 [project]
-name = "ccf2d"
+name = "regrender"
 version = "0.1.0"
-description = "Tools for do the 2d mouse brain registration"
+description = "2D mouse brain registration, ROI annotation, and brainrender reconstruction"
 readme = "README.md"
 authors = [
     { name = "Yu-Ting Wei", email = "ytsimon2004@gmail.com" },
@@ -33,4 +33,4 @@ build-backend = "hatchling.build"
 
 
 [project.scripts]
-ccf2d = "ccf2d.__main__:main"
+regrender = "regrender.__main__:main"

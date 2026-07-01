@@ -1,11 +1,11 @@
-"""Unit test for ccf2d.main_roi.project_raw_rois (the raw-px -> CCF projection wiring),
+"""Unit test for regrender.main_roi.project_raw_rois (the raw-px -> CCF projection wiring),
 stubbing the atlas views so it runs without loading Allen volumes."""
 import numpy as np
 import polars as pl
 
 from neuralib.atlas.ccf.matrix import SLICE_DIMENSION_10um
 
-from ccf2d.main_roi import project_raw_rois, write_channel_csvs
+from regrender.main_roi import project_raw_rois, write_channel_csvs
 
 
 class _Plane:

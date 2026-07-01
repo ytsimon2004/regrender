@@ -1,13 +1,16 @@
-Welcome to ccf2d documentation!
+Welcome to regrender documentation!
 ====================================
 
-**ccf2d** is a Python package adapted from `allenCCF <https://github.com/cortex-lab/allenCCF>`_,
+**regrender** is a Python package (adapted from `allenCCF <https://github.com/cortex-lab/allenCCF>`_)
+for napari-based 2D registration of histology to the Allen CCF, ROI annotation on raw images, and
+brainrender reconstruction.
 
 Features
 ---------------
 
-- Basic slice registration functionality through a MATLAB GUI.
-- Python-based CLI tools for related workflows.
+- Interactive slice-to-atlas registration (``regrender register``).
+- ROI annotation on raw images, projected into atlas space (``regrender roi``).
+- Probe-track reconstruction (``regrender probe``).
 
 
 Getting Started

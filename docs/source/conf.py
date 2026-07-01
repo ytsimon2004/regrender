@@ -6,7 +6,7 @@
 # -- Project information -----------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
 
-project = 'ccf2d'
+project = 'regrender'
 copyright = '2025, yu-ting wei'
 author = 'yu-ting wei'
 
@@ -43,7 +43,7 @@ html_static_path = ['_static']
 html_theme_options = {
     "navigation_depth": 2,
     "show_toc_level": 4,
-    "github_url": "https://github.com/ytsimon2004/ccf2d",
+    "github_url": "https://github.com/ytsimon2004/regrender",
 
     # ─── Linear reading aids ────────────────────────────────
     # show “Previous” / “Next” links at bottom of each page

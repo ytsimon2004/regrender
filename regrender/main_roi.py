@@ -2,7 +2,7 @@
 
 Workflow order is **roi → register → project**. ROIs (cells) are labelled on the *full
 resolution* raw histology (you need the detail to see them) and saved in **raw pixel**
-coords, independent of any registration. Once the slice is registered (`ccf2d register`),
+coords, independent of any registration. Once the slice is registered (`regrender register`),
 the saved transform is applied to those raw coords to project them into the down-sampled
 Allen atlas / CCF space, then reconstructed with brainrender. Projection is a single
 function used by both the GUI "Project + Render" button and the headless ``--project`` CLI.
@@ -21,9 +21,9 @@ from neuralib.atlas.ccf.matrix import slice_transform_helper
 from neuralib.atlas.util import ALLEN_CCF_10um_BREGMA
 from neuralib.util.verbose import fprint, print_save
 
-from ccf2d.core import (boundary_mask, load_transform, plane_point_to_ccf_mm, raw_points_to_atlas,
+from regrender.core import (boundary_mask, load_transform, plane_point_to_ccf_mm, raw_points_to_atlas,
                         read_oriented, region_name, rotate)
-from ccf2d.slice_app import RegionPicker, SliceReconstructOptions
+from regrender.slice_app import RegionPicker, SliceReconstructOptions
 
 __all__ = ['RoiOptions', 'project_raw_rois']
 
@@ -81,7 +81,7 @@ def project_raw_rois(rows, get_views, structures, transform_for):
 
 def _render_tmpdir() -> Path:
     # per-channel render inputs live in a throwaway temp dir; the OS reaps it, the data folder stays clean
-    return Path(tempfile.mkdtemp(prefix='ccf2d_roi_'))  # ponytail: leak is a few KB in /tmp per render
+    return Path(tempfile.mkdtemp(prefix='regrender_roi_'))  # ponytail: leak is a few KB in /tmp per render
 
 
 def write_channel_csvs(ccf_rows, dest_dir: Path) -> list[tuple[str, Path]]:
@@ -169,7 +169,7 @@ class RoiOptions(SliceReconstructOptions):
         self._tdir = self.transform_dir or base / 'transformations'
         self._out = raw_csv
         if not raw_csv.exists():
-            raise FileNotFoundError(f'no raw-ROI csv {raw_csv} — label ROIs with `ccf2d roi` first')
+            raise FileNotFoundError(f'no raw-ROI csv {raw_csv} — label ROIs with `regrender roi` first')
 
         df = pl.read_csv(raw_csv)
         if not set(RAW_COLS) <= set(df.columns):
@@ -189,7 +189,7 @@ class RoiOptions(SliceReconstructOptions):
         import napari
         from magicgui.widgets import CheckBox, ComboBox, Container, Label, PushButton
 
-        viewer = napari.Viewer(title='ccf2d roi')
+        viewer = napari.Viewer(title='regrender roi')
         viewer.camera.mouse_pan = False  # left-drag must add ROIs, not pan the slice; scroll still zooms
         viewer.text_overlay.visible = True  # region name under cursor (verify mode)
         viewer.text_overlay.font_size = 18

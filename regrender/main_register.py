@@ -13,7 +13,7 @@ from neuralib.atlas.view import get_slice_view
 from neuralib.imglib.transform import apply_transformation
 from neuralib.util.verbose import fprint, print_save
 
-from ccf2d.core import (TerminalLog, boundary_mask, estimate_transform, load_transform, read_oriented,
+from regrender.core import (TerminalLog, boundary_mask, estimate_transform, load_transform, read_oriented,
                         region_name, rotate, save_transform, to_uint8)
 
 __all__ = ['RegisterOptions']
@@ -145,7 +145,7 @@ class RegisterOptions(AbstractParser):
         state['brgb'] = brgb
         bcmap = Colormap([[0, 0, 0], list(brgb)], name='boundary')  # 0 -> transparent (additive), 1 -> color
 
-        viewer = napari.Viewer(title=f'ccf2d register — {name}')
+        viewer = napari.Viewer(title=f'regrender register — {name}')
         viewer.text_overlay.visible = True
         viewer.text_overlay.font_size = 18
         viewer.text_overlay.color = 'yellow'
@@ -494,7 +494,7 @@ class RegisterOptions(AbstractParser):
             state['hist'] = make_hist(rot_w.value)
             set_histology(state['hist'])
             on_clear()
-            viewer.title = f'ccf2d register — {state["name"]}'
+            viewer.title = f'regrender register — {state["name"]}'
             files = state['files']
             pos = f'{files.index(p) + 1}/{len(files)}  ' if p in files else ''
             img_lbl.value = f'{pos}{p.name}'

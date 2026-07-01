@@ -1,4 +1,4 @@
-"""Unit tests for ccf2d.core (pure, GUI-free helpers)."""
+"""Unit tests for regrender.core (pure, GUI-free helpers)."""
 import json
 
 import cv2
@@ -6,7 +6,7 @@ import imageio.v3 as iio
 import numpy as np
 import pytest
 
-from ccf2d import core
+from regrender import core
 
 
 # --- transform -------------------------------------------------------------
@@ -143,7 +143,7 @@ def test_ccf_mm_to_plane_point_inverts():
 
 def test_render_command_per_shank_and_region_colors():
     from pathlib import Path
-    from ccf2d.main_probe import _render_command
+    from regrender.main_probe import _render_command
     cmd = _render_command(Path('p.csv'), 'coronal', shanks=[1, 2],
                           shank_colors={1: 'red', 2: 'blue'},
                           region_colors={'VISp': 'green', 'MOp': 'cyan'},
@@ -156,7 +156,7 @@ def test_render_command_per_shank_and_region_colors():
 
 def test_render_command_theoretical_track():
     from pathlib import Path
-    from ccf2d.main_probe import _render_command
+    from regrender.main_probe import _render_command
     cmd = _render_command(Path('p.csv'), 'coronal', shanks=[1], shank_colors={},
                           region_colors={}, depth=4000, interval=250)
     assert '--dye' not in cmd

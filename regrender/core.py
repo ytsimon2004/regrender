@@ -1,4 +1,4 @@
-"""Pure, GUI-free building blocks shared across ccf2d modes.
+"""Pure, GUI-free building blocks shared across regrender modes.
 
 Everything here is side-effect-light and unit-testable without napari, so future
 modes (cell annotation, probe tracks, ...) can reuse the same transform/image/atlas

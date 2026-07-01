@@ -1,4 +1,4 @@
-# ccf2d
+# regrender
 
 **Tools for 2D mouse brain registration to the Allen Common Coordinate Framework (CCF)**
 
@@ -15,7 +15,7 @@ Adapted from [allenCCF](https://github.com/cortex-lab/allenCCF) - A comprehensiv
 
 ## Quick Start
 
-- please refer to the [full documentation](https://ccf2d.readthedocs.io)
+- please refer to the [full documentation](https://regrender.readthedocs.io)
 
 ## Contact
 
