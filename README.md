@@ -2,20 +2,37 @@
 
 **Tools for 2D mouse brain registration to the Allen Common Coordinate Framework (CCF)**
 
-Adapted from [allenCCF](https://github.com/cortex-lab/allenCCF) - A comprehensive toolkit for registering histological brain slices to the Allen Brain Atlas and analyzing spatial distributions of cells and regions of interest.
+A napari-based Python toolkit
+For registering histological brain slices to the Allen Brain Atlas, annotating cells/ROIs,
+reconstructing probe tracks, and rendering the results with brainrender.
 
 ## Features
 
-- **Automated brain slice registration** to Allen CCF coordinates
-- **Interactive MATLAB GUI** for manual registration refinement
-- **ROI analysis** with spatial coordinate extraction
-- **Batch processing** support for whole-brain datasets
-- **Multiple imaging modalities** (fluorescence, DAPI, multi-channel)
-- **Flexible data structure** for various experimental workflows
+- **Interactive slice→CCF registration** (`regrender register`) — pick landmark pairs in napari, estimate a homography/affine transform.
+- **ROI annotation** (`regrender roi`) — label cells on raw images, project them into CCF space, and render.
+- **Probe-track reconstruction** (`regrender probe`) — reconstruct electrode shanks from dye labels across serial sections.
+- **brainrender rendering** of ROIs and probes in 3D atlas space.
 
 ## Quick Start
 
-- please refer to the [full documentation](https://regrender.readthedocs.io)
+```bash
+# install (uv or pip)
+uv pip install -e .
+
+# 1. label ROIs on raw slices
+regrender roi -D <slices_dir>
+
+# 2. register each slice to the CCF
+regrender register -D <slices_dir>
+
+# 3. project ROIs to CCF + render  (or use the GUI "Project + Render" button)
+regrender roi --project --render -D <slices_dir>
+
+# probe tracks
+regrender probe -D <slices_dir>
+```
+
+See the [full documentation](https://regrender.readthedocs.io) for the complete workflow.
 
 ## Contact
 

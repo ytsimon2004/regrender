@@ -17,7 +17,6 @@ extensions = ['sphinx.ext.autodoc',
               'sphinx.ext.autosummary',
               'sphinx_copybutton']
 
-templates_path = ['_templates']
 exclude_patterns = []
 
 # -- Options for autodoc ------------------------------------------------
@@ -39,7 +38,6 @@ autosummary_generate = True
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#options-for-html-output
 
 html_theme = 'pydata_sphinx_theme'
-html_static_path = ['_static']
 html_theme_options = {
     "navigation_depth": 2,
     "show_toc_level": 4,
@@ -68,9 +66,6 @@ html_theme_options = {
     ],
 
 }
-
-# -- Notebook --------------------------------
-nbsphinx_execute = 'never'
 
 # -- Copy Button --------------------------------
 copybutton_prompt_text = r'^\$ '

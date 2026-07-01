@@ -6,6 +6,8 @@ Getting Started
    :caption: get start
 
    installation
+   register
    roi
+   probe
    data_structure
 

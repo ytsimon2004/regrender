@@ -1,65 +1,86 @@
 Data Directory Structure
 =============================
-For batch processing (i.e., whole brain / multiple channels processing)
 
+regrender works on a **folder of serial section images** (``-D/--directory``) or a single
+image (``-I/--image``). All outputs are written next to the input images. A typical folder
+looks like this after running the full pipeline:
 
 .. code-block:: text
 
-    YW001_reg/
-        ├── raw/ (optional) -- (1)
+    <slices_dir>/
+        ├── <stem>.tif                       # input histology slices (one per section)
         │
-        ├── zproj/ -- (2)
-        │    └── YW001_g*_s*_{channel}.tif
+        ├── transformations/                 # created by `regrender register`
+        │     ├── <stem>_transform.json      # registration metadata (see below)
+        │     ├── <stem>_transformed.tif     # histology warped into atlas space
+        │     └── <stem>_overlay.tif         # warped histology with atlas boundaries burned in
         │
-        ├── roi/ -- (3)
-        │    └── YW001_g*_s*_{channel}.roi
+        ├── roi/                             # created by `regrender roi`
+        │     ├── roi_points_raw.csv         # ROIs in raw pixel coords
+        │     └── roi_points_ccf.csv         # ROIs projected into CCF (after "Project")
         │
-        ├── roi_cpose/ -- (3')
-        │    └── YW001_g*_s*_{channel}.roi
-        │
-        ├── resize/ (src for the allenccf)
-        │    ├── YW001_g*_s*_resize.tif -- (4)
-        │    │
-        │    └── processed/
-        │           ├── YW001_g*_s*_resize_processed.tif -- (5)
-        │           └── transformations/
-        │                 ├── YW001_g*_s*_resize_processed_transformed.tif -- (6)
-        │                 │
-        │                 ├── YW001_g*_s*_resize_processed_transform_data.mat -- (7)
-        │                 │
-        │                 └── labelled_regions/
-        │                       ├── {*channel}_roitable.csv -- (8)
-        │                       └── parsed_data/
-        │                             └── parsed_csv_merge.csv -- (9)
-        │
-        ├── resize_overlap/* (optional) -- (10)
-        └── output_files/ (for generated figures or analysis outputs)
+        └── probe_shanks.csv                 # created by `regrender probe`
 
-Placeholders
-------------
+Registration metadata — ``<stem>_transform.json``
+--------------------------------------------------
 
-- ``g*`` : Index of glass slide.
-- ``s*`` : Index of Slice .
-- ``{channel}`` : Channel name (e.g., ``r``, ``g``, ``b``, ``o(overlap)``).
+Written by ``regrender register`` and consumed by ``roi`` / ``probe``. Fields:
 
-Reference (1)–(10)
-------------------
+.. list-table::
+   :header-rows: 1
+   :widths: 20 80
 
-1. **raw/** — Raw confocal data (e.g., ``.lsm``, ``.czi``, or ``.tiff``). *(optional)*
-2. **zproj/** — Z-projection stacks. Must be **RGB** and saved **per channel** (``r``, ``g``, ``b``, ``o``).
-3. **roi/** — ROI files after ImageJ selection (``.roi``).
-3'. **roi_cpose/** — ROI files from the Cellpose pipeline *(dev)*.
-4. **resize/** → ``*_resize.tif`` — Merged ROI, **scaled RGB** image for registration. Typically use **blue (DAPI)** as reference.
-5. **processed/** → ``*_resize_processed.tif`` — Contrast-adjusted and/or rotated image.
-6. **transformations/** → ``*_transformed.tif`` — Image after applying the transformation.
-7. **transformations/** → ``*_transform_data.mat`` — Transformation matrix/data for each slice.
-8. **labelled_regions/** → ``{*channel}_roitable.csv`` — AllenCCF output (per ROI).
-9. **labelled_regions/parsed_data/** → ``parsed_csv_merge.csv`` — Parsed & classified CSV for visualization.
-10. **resize_overlap/** — If overlap channels exist, mirror the same structure as ``r/g`` channels. **Use the same transformation matrix.** *(optional)*
+   * - Field
+     - Meaning
+   * - ``matrix``
+     - 3×3 homography (or affine) mapping the resized slice onto atlas-plane pixels.
+   * - ``plane``
+     - Cutting plane (``coronal`` / ``sagittal``).
+   * - ``resolution``
+     - Atlas resolution in µm (default ``10``).
+   * - ``slice_index``
+     - Atlas plane index (voxel) the slice was matched to.
+   * - ``dw`` / ``dh``
+     - Cutting-plane tilt offsets.
+   * - ``rotate``
+     - In-plane rotation (degrees) applied to the raw slice.
+   * - ``flip_lr`` / ``flip_ud``
+     - Whether the raw slice was flipped before registration.
+   * - ``contrast``
+     - ``(lo, hi)`` contrast window used for the saved ``.tif``, or ``null``.
+   * - ``slice_xy`` / ``atlas_xy``
+     - The matched landmark point pairs (slice pixels / atlas pixels).
 
+The ``rotate`` / ``flip_lr`` / ``flip_ud`` fields record the preprocessing so raw ROI points
+can be replayed into atlas space (raw → flip → rotate → resize → apply matrix).
+
+ROI CSVs — ``roi/``
+-------------------
+
+``roi_points_raw.csv`` (from labeling on raw images):
+
+- ``slice`` — source slice stem
+- ``x``, ``y`` — ROI position in **raw image pixels**
+- ``raw_h``, ``raw_w`` — raw image shape (needed to replay the transform)
+- ``channel`` — ``merge`` / ``R`` / ``G`` / ``B``
+
+``roi_points_ccf.csv`` (after "Project + Render" or ``roi --project``) adds:
+
+- ``AP_location``, ``DV_location``, ``ML_location`` — bregma-relative CCF coordinates (mm)
+- ``region`` — Allen region acronym at that point
+- ``source`` — source slice stem
+- ``channel``
+
+Probe CSV — ``probe_shanks.csv``
+--------------------------------
+
+From ``regrender probe``:
+
+- ``AP_location``, ``DV_location``, ``ML_location`` — CCF coordinates (mm)
+- ``probe_idx`` — shank index
+- ``point`` — ``dorsal`` (superficial) or ``ventral`` (deep)
 
 .. note::
 
-    - For (4): If channel count is limited, save overlap channels to a separate pseudo-color file, then apply **the same** transformation matrix during registration.
-    - Ensure the DAPI (blue) channel is used as the registration reference unless otherwise specified.
-    - Maintain consistent filename patterns to keep downstream parsing robust.
+    Optional upstream preprocessing (channel split/merge, rescaling, ROI TIFF generation) can
+    be done in Fiji/ImageJ — see the macros under ``res/fiji`` in the repository.

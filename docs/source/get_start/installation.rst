@@ -66,9 +66,12 @@ After installation, verify that regrender is working correctly:
     # Check if the command is available
     regrender --help
 
-    # Initialize atlas data (this will download ~4.5GB)
-    regrender init
+.. note::
+
+    Atlas data is **not** downloaded by regrender directly. The Allen CCF atlas is fetched
+    automatically by BrainGlobe/neuralib the first time you run ``register``, ``roi``, or
+    ``probe`` (this may take a few minutes on first use).
 
 .. note::
-    
+
     If you encounter issues with ``llvmlite`` or ``numba`` dependencies on Python 3.12, this is a known compatibility issue with some atlas visualization libraries. The core registration functionality will still work.
