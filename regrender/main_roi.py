@@ -175,7 +175,7 @@ class RoiOptions(SliceReconstructOptions):
         if not set(RAW_COLS) <= set(df.columns):
             raise ValueError(f'{raw_csv.name}: not a raw-ROI csv (needs {", ".join(RAW_COLS)})')
         get_views = self.make_view_cache()
-        structures = BrainGlobeAtlas('allen_mouse_10um').structures
+        structures = BrainGlobeAtlas('allen_mouse_10um', check_latest=False).structures
         res = self._project_and_save(df.to_dicts(), get_views, structures)
         if res is not None and self.render:
             _, ccf_rows = res
@@ -195,7 +195,7 @@ class RoiOptions(SliceReconstructOptions):
         viewer.text_overlay.font_size = 18
         viewer.text_overlay.color = 'yellow'
 
-        bg = BrainGlobeAtlas('allen_mouse_10um')
+        bg = BrainGlobeAtlas('allen_mouse_10um', check_latest=False)
         get_views = self.make_view_cache()  # lazy: atlas volumes load only on first Project/Verify
 
         # rois[id] = {'slice': stem, 'raw': (y, x)}; shapes[stem] = (H, W)

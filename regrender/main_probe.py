@@ -87,7 +87,7 @@ class ProbeOptions(SliceReconstructOptions):
         viewer.text_overlay.font_size = 18
         viewer.text_overlay.color = 'yellow'
 
-        bg = BrainGlobeAtlas('allen_mouse_10um')
+        bg = BrainGlobeAtlas('allen_mouse_10um', check_latest=False)
 
         # pts[(shank, 'dorsal'|'ventral')] = (AP, DV, ML) bregma-relative mm; crosses re-derived per slice
         state: dict = {'pts': {}, 'files': files, 'cursor': 0, 'plane': None,

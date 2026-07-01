@@ -1,7 +1,35 @@
 Installation
 ===============
 
-There are two recommended approaches for setting up the environment and installing the regrender package.
+Quick Install (End Users)
+-------------------------
+
+If you just want to use the ``regrender`` command (no cloning, no dev setup), install it as a
+`uv tool <https://docs.astral.sh/uv/guides/tools/>`_ straight from GitHub:
+
+.. code-block:: bash
+
+    uv tool install git+https://github.com/ytsimon2004/regrender.git
+
+This installs ``regrender`` into an isolated environment and puts it on your ``PATH``. Verify with:
+
+.. code-block:: bash
+
+    regrender --help
+
+To upgrade later, or to remove it:
+
+.. code-block:: bash
+
+    uv tool upgrade regrender
+    uv tool uninstall regrender
+
+.. note::
+
+    If ``regrender`` is not found after install, run ``uv tool update-shell`` (then restart your
+    shell) to add uv's tool directory to your ``PATH``.
+
+The sections below are for **developers** who want an editable checkout.
 
 Prerequisites
 -------------

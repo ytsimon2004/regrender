@@ -16,8 +16,8 @@ reconstructing probe tracks, and rendering the results with brainrender.
 ## Quick Start
 
 ```bash
-# install (uv or pip)
-uv pip install -e .
+# install as a CLI tool (no clone needed)
+uv tool install git+https://github.com/ytsimon2004/regrender.git
 
 # 1. label ROIs on raw slices
 regrender roi -D <slices_dir>

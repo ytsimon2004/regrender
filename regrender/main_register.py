@@ -88,7 +88,7 @@ class RegisterOptions(AbstractParser):
         out_dir = self.output_dir or base / 'transformations'
         name = self.name or (self.raw_image.stem if self.raw_image else 'untitled')
 
-        view = get_slice_view('reference', self.cut_plane, resolution=self.resolution)
+        view = get_slice_view('reference', self.cut_plane, resolution=self.resolution, check_latest=False)
         atlas_w = int(view.width)
 
         self._oriented = self._read_oriented(self.raw_image)  # None until an image is loaded
@@ -123,8 +123,8 @@ class RegisterOptions(AbstractParser):
         if state['files'] and self.raw_image in state['files']:
             state['cursor'] = state['files'].index(self.raw_image)
 
-        ann_view = get_slice_view('annotation', self.cut_plane, resolution=self.resolution)
-        structures = BrainGlobeAtlas(f'allen_mouse_{self.resolution}um').structures
+        ann_view = get_slice_view('annotation', self.cut_plane, resolution=self.resolution, check_latest=False)
+        structures = BrainGlobeAtlas(f'allen_mouse_{self.resolution}um', check_latest=False).structures
 
         def plane_image() -> np.ndarray:
             i, dw, dh = state['index'], state['dw'], state['dh']
@@ -433,8 +433,8 @@ class RegisterOptions(AbstractParser):
             # plane drives the atlas/annotation views, dimensions and atlas_w; rebuild them all
             nonlocal ref_view, ann_view, atlas_w, dim
             self.cut_plane = plane_w.value
-            ref_view = get_slice_view('reference', self.cut_plane, resolution=self.resolution)
-            ann_view = get_slice_view('annotation', self.cut_plane, resolution=self.resolution)
+            ref_view = get_slice_view('reference', self.cut_plane, resolution=self.resolution, check_latest=False)
+            ann_view = get_slice_view('annotation', self.cut_plane, resolution=self.resolution, check_latest=False)
             atlas_w = int(ref_view.width)
             dim = SLICE_DIMENSION_10um[self.cut_plane]
 
