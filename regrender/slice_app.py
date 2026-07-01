@@ -174,10 +174,24 @@ class SliceReconstructOptions(AbstractParser):
         return on_move
 
     def launch_render(self, argv: list[str], status=None, msg: str = ''):
-        """Shell out to a brainrender CLI in a separate window (non-blocking)."""
+        """Shell out to a brainrender CLI in a separate window (non-blocking).
+
+        Child output goes to ``render.log`` next to the csv so a silent crash (no window) is
+        diagnosable instead of vanishing. brainrender's ``Scene`` re-checks the atlas version
+        over the network (no timeout, 5 retries) on every launch, stalling the render for
+        minutes on a slow link — so we disable that check in the child before running the CLI."""
         if status is not None:
             status.value = msg
-        subprocess.Popen([sys.executable, '-m', *argv])
+        log_path = Path(self._out).with_name('render.log')
+        module, *rest = argv
+        boot = (
+            'import runpy, sys, brainglobe_atlasapi.bg_atlas as b;'
+            'b.BrainGlobeAtlas.check_latest_version = lambda self, *a, **k: None;'
+            f'sys.argv = [{module!r}, *sys.argv[1:]];'
+            f'runpy.run_module({module!r}, run_name="__main__")'
+        )
+        subprocess.Popen([sys.executable, '-c', boot, *rest],
+                         stdout=open(log_path, 'w'), stderr=subprocess.STDOUT)
 
     @staticmethod
     def header(text):
