@@ -24,18 +24,21 @@ _COLORS = ['red', 'salmon', 'darkred', 'cyan', 'yellow', 'magenta',
 SHADER_STYLES = ['plastic', 'cartoon', 'metallic', 'shiny', 'glossy']
 
 
-def _shank_table_html(pts: dict[tuple[int, str], tuple[float, float, float]]) -> str:
+def _shank_table_html(pts: dict[tuple[int, str], tuple[float, float, float]],
+                      src: dict[tuple[int, str], str] | None = None) -> str:
     """HTML table of picked points; each shank number is a ``del:<n>`` link to remove it."""
     if not pts:
         return 'no points yet'
-    rows = ['<tr><th>shank</th><th>point</th><th>AP</th><th>DV</th><th>ML</th></tr>']
+    src = src or {}
+    rows = ['<tr><th>shank</th><th>point</th><th>AP</th><th>DV</th><th>ML</th><th>source</th></tr>']
     for shank in sorted({s for s, _ in pts}):
         for point in ('dorsal', 'ventral'):
             if (shank, point) in pts:
                 ap, dv, ml = pts[(shank, point)]
                 rows.append(f'<tr><td align="center"><a href="del:{shank}">{shank} ✕</a></td>'
                             f'<td>{point}</td><td align="right">{ap:.2f}</td>'
-                            f'<td align="right">{dv:.2f}</td><td align="right">{ml:.2f}</td></tr>')
+                            f'<td align="right">{dv:.2f}</td><td align="right">{ml:.2f}</td>'
+                            f'<td>{src.get((shank, point), "")}</td></tr>')
     return ('<table border=1 cellspacing=0 cellpadding=4>' + ''.join(rows)
             + '</table><br><i>AP, DV, ML in mm · click a shank ✕ to remove it</i>')
 
@@ -90,7 +93,8 @@ class ProbeOptions(SliceReconstructOptions):
         bg = BrainGlobeAtlas('allen_mouse_10um', check_latest=False)
 
         # pts[(shank, 'dorsal'|'ventral')] = (AP, DV, ML) bregma-relative mm; crosses re-derived per slice
-        state: dict = {'pts': {}, 'files': files, 'cursor': 0, 'plane': None,
+        # src[(shank, 'dorsal'|'ventral')] = source slice stem the point was picked on
+        state: dict = {'pts': {}, 'src': {}, 'files': files, 'cursor': 0, 'plane': None,
                        'view': None, 'plane_off': None, 'name': None, 'ann_img': None, 'hover_id': None}
 
         warped_layer = None  # created on first load (re-created to switch grayscale<->RGB safely)
@@ -100,7 +104,10 @@ class ProbeOptions(SliceReconstructOptions):
         highlight_layer = viewer.add_image(np.zeros((10, 10), dtype=float), name='region_highlight',
                                            colormap=hcmap, blending='additive', opacity=0.4)
         click_layer = viewer.add_points(name='clicks', face_color='cyan', symbol='cross',
-                                        size=20, ndim=2)
+                                        size=20, ndim=2,
+                                        features={'label': np.empty(0, dtype='<U8')},
+                                        text={'string': '{label}', 'color': 'cyan', 'size': 12,
+                                              'translation': [-14, 0]})
 
         def set_histology(img: np.ndarray):
             # napari can't flip grayscale<->RGB in place; re-create it (reorder() puts it at bottom)
@@ -128,15 +135,17 @@ class ProbeOptions(SliceReconstructOptions):
         def redraw_crosses():
             # reconstruct each point's pixel from its CCF coord; show it if it lands on this slice
             view, off = state['view'], state['plane_off']
-            here = []
+            here, labels = [], []
             if view is not None and off is not None:
-                for ccf in state['pts'].values():
+                for (shank, point), ccf in state['pts'].items():
                     plane, x, y = ccf_mm_to_plane_point(ccf, project_index=view.project_index,
                                                         resolution=view.resolution)
                     xi, yi = int(round(x)), int(round(y))
                     if 0 <= yi < off.shape[0] and 0 <= xi < off.shape[1] and abs(off[yi, xi] - plane) <= 1:
                         here.append([y, x])
+                        labels.append(f'{shank} ({point[0]})')  # e.g. "0 (d)" / "0 (v)"
             click_layer.data = np.array(here) if here else np.empty((0, 2))
+            click_layer.features = {'label': np.array(labels, dtype='<U8')}
 
         def load_slice(img: Path):
             tp = self._transform_path(img)
@@ -171,7 +180,7 @@ class ProbeOptions(SliceReconstructOptions):
             status.value = f'{img.name}: click the dye, marking {mark_w.value} of shank {shank_w.value}'
 
         def refresh_summary():
-            summary.value = _shank_table_html(state['pts'])
+            summary.value = _shank_table_html(state['pts'], state['src'])
 
         def on_table_link(href: str):
             if not href.startswith('del:'):
@@ -183,6 +192,7 @@ class ProbeOptions(SliceReconstructOptions):
                 return
             for point in ('dorsal', 'ventral'):
                 state['pts'].pop((shank, point), None)
+                state['src'].pop((shank, point), None)
             refresh_summary()
             redraw_crosses()
             status.value = f'removed shank {shank}'
@@ -209,6 +219,7 @@ class ProbeOptions(SliceReconstructOptions):
                                         bregma_10um=tuple(ALLEN_CCF_10um_BREGMA))
             key = (int(shank_w.value), _POINT[mark_w.value])
             state['pts'][key] = ccf
+            state['src'][key] = state['name']  # slice this point was picked on
             redraw_crosses()
             status.value = (f'shank {shank_w.value} {mark_w.value} -> '
                             f'AP {ccf[0]:.2f}, DV {ccf[1]:.2f}, ML {ccf[2]:.2f} mm')
@@ -249,8 +260,9 @@ class ProbeOptions(SliceReconstructOptions):
                 status.value = f'{path.name}: not a probe CSV (needs {", ".join(sorted(_CSV_COLS))})'
                 return
             for r in df.iter_rows(named=True):
-                state['pts'][(int(r['probe_idx']), r['point'])] = (
-                    r['AP_location'], r['DV_location'], r['ML_location'])
+                key = (int(r['probe_idx']), r['point'])
+                state['pts'][key] = (r['AP_location'], r['DV_location'], r['ML_location'])
+                state['src'][key] = r.get('source', '') or ''  # column optional on older CSVs
             refresh_summary()
             redraw_crosses()  # crosses are reconstructed from the loaded coordinates
             status.value = f'loaded {len({s for s, _ in state["pts"]})} shank(s) from {path.name}'
@@ -265,7 +277,8 @@ class ProbeOptions(SliceReconstructOptions):
                         return None
                     ap, dv, ml = state['pts'][(s, point)]
                     rows.append({'AP_location': ap, 'DV_location': dv, 'ML_location': ml,
-                                 'probe_idx': s, 'point': point})
+                                 'probe_idx': s, 'point': point,
+                                 'source': state['src'].get((s, point), '')})
             if not rows:
                 status.value = 'no points to save'
                 return None

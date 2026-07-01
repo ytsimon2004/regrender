@@ -88,17 +88,21 @@ class SliceReconstructOptions(AbstractParser):
 
     directory: Path | None = argument(
         '-D', '--directory', default=None,
-        help='folder of serial sections (steps through them; reads transformations/<stem>_transform.json)')
+        help='folder of serial sections (steps through them; reads transformations/<stem>_transform.json)'
+    )
 
     raw_image: Path | None = argument(
-        '-I', '--image', default=None, help='single registered histology image (alternative to -D)')
+        '-I', '--image', default=None, help='single registered histology image (alternative to -D)'
+    )
 
     transform_dir: Path | None = argument(
         '--transform-dir', default=None,
-        help='where the *_transform.json live (default: <image-dir>/transformations)')
+        help='where the *_transform.json live (default: <image-dir>/transformations)'
+    )
 
     output: Path | None = argument(
-        '-O', '--output', default=None, help='output points csv (default: <dir>/<mode default>)')
+        '-O', '--output', default=None, help='output points csv (default: <dir>/<mode default>)'
+    )
 
     _IMG_EXT = _IMG_EXT
 
@@ -176,13 +180,12 @@ class SliceReconstructOptions(AbstractParser):
     def launch_render(self, argv: list[str], status=None, msg: str = ''):
         """Shell out to a brainrender CLI in a separate window (non-blocking).
 
-        Child output goes to ``render.log`` next to the csv so a silent crash (no window) is
-        diagnosable instead of vanishing. brainrender's ``Scene`` re-checks the atlas version
-        over the network (no timeout, 5 retries) on every launch, stalling the render for
-        minutes on a slow link — so we disable that check in the child before running the CLI."""
+        The child inherits our terminal's stdout/stderr, so a crash is visible where regrender
+        was launched. brainrender's ``Scene`` re-checks the atlas version over the network (no
+        timeout, 5 retries) on every launch, stalling the render for minutes on a slow link — so
+        we disable that check in the child before running the CLI."""
         if status is not None:
             status.value = msg
-        log_path = Path(self._out).with_name('render.log')
         module, *rest = argv
         boot = (
             'import runpy, sys, brainglobe_atlasapi.bg_atlas as b;'
@@ -190,8 +193,7 @@ class SliceReconstructOptions(AbstractParser):
             f'sys.argv = [{module!r}, *sys.argv[1:]];'
             f'runpy.run_module({module!r}, run_name="__main__")'
         )
-        subprocess.Popen([sys.executable, '-c', boot, *rest],
-                         stdout=open(log_path, 'w'), stderr=subprocess.STDOUT)
+        subprocess.Popen([sys.executable, '-c', boot, *rest])
 
     @staticmethod
     def header(text):

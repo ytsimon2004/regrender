@@ -1,0 +1,48 @@
+Probe-Track Reconstruction (``regrender probe``)
+==================================================
+
+Reconstruct electrode/probe shanks from dye labels on registered slices, then render them in
+3D with brainrender. Requires the slices to be registered first (``regrender register``).
+
+.. code-block:: bash
+
+    regrender probe -D <slices_dir>
+
+Workflow
+--------
+
+Each slice's ``*_transform.json`` is loaded and the histology is re-warped into atlas space.
+
+1. Step through serial sections and, for each shank, click the **superficial (dorsal)** and
+   **deep (ventral)** dye point. Each click is converted to bregma-relative CCF (AP, DV, ML) mm.
+2. Assign per-shank colors, optionally pick atlas region meshes to render, and flip the ML
+   hemisphere if needed.
+3. **Render** shells out to ``neuralib.atlas.brainrender.probe``:
+
+   - dye-only by default, or
+   - with a theoretical track when ``--depth`` (and optionally ``--interval``) is set.
+
+Picked points are saved to ``probe_shanks.csv`` (``AP_location``, ``DV_location``,
+``ML_location``, ``probe_idx``, ``point``).
+
+Options
+-------
+
+.. list-table::
+   :header-rows: 1
+   :widths: 25 75
+
+   * - Option
+     - Meaning
+   * - ``-D``, ``--directory``
+     - Folder of serial sections (reads ``transformations/<stem>_transform.json``).
+   * - ``-I``, ``--image``
+     - Single registered image (alternative to ``-D``).
+   * - ``--transform-dir``
+     - Where the ``*_transform.json`` live (default ``<dir>/transformations``).
+   * - ``-O``, ``--output``
+     - Output CSV path (default ``<dir>/probe_shanks.csv``).
+   * - ``--depth``
+     - Implant depth in µm; if set, render adds the theoretical track (else dye-only).
+   * - ``--interval``
+     - Contact interval in µm along the theoretical track (used with ``--depth``).
