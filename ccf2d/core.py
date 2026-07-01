@@ -14,12 +14,13 @@ from typing import Any
 import cv2
 import imageio.v3 as iio
 import numpy as np
+from neuralib.atlas.ccf.matrix import SLICE_DIMENSION_10um
 from neuralib.atlas.typing import PLANE_TYPE
 
 __all__ = [
     'read_oriented', 'rotate', 'to_uint8', 'boundary_mask', 'region_name',
     'estimate_transform', 'save_transform', 'plane_point_to_ccf_mm', 'ccf_mm_to_plane_point',
-    'TerminalLog',
+    'raw_points_to_atlas', 'TerminalLog',
 ]
 
 
@@ -183,6 +184,42 @@ def plane_point_to_ccf_mm(
     ap, dv, ml = (v * resolution for v in idx)  # voxel -> µm (absolute)
     bap, bdv, bml = (b * 10 for b in bregma_10um)  # 10µm voxel -> µm
     return (bap - ap) / 1000, (dv - bdv) / 1000, (bml - ml) / 1000
+
+
+def raw_points_to_atlas(
+        pts_xy: np.ndarray, *,
+        matrix: np.ndarray, raw_shape: tuple[int, int], plane: PLANE_TYPE,
+        rotate_deg: float = 0.0, flip_lr: bool = False, flip_ud: bool = False) -> np.ndarray:
+    """Forward-map raw-image ``(x, y)`` pixels into atlas-plane ``(x, y)`` pixels.
+
+    Replays register's preprocessing pipeline (read -> flip -> rotate -> resize-to-dim ->
+    matrix) on points, so ROIs labelled on the original histology land in the same atlas-plane
+    space ``plane_point_to_ccf_mm`` consumes. The matrix was fit on the image resized to
+    ``SLICE_DIMENSION_10um[plane]`` (see ``slice_transform_helper``), so resize happens here too.
+
+    :param pts_xy: ``Array[float, [N, 2]]`` (x, y) on the raw image.
+    :param matrix: 3x3 homography from the saved ``*_transform.json``.
+    :param raw_shape: ``(H, W)`` of the raw image file.
+    :param plane: cutting plane (selects the resize dimension).
+    :param rotate_deg: rotation recorded at registration (same convention as :func:`rotate`).
+    :return: ``Array[float64, [N, 2]]`` atlas-plane (x, y).
+    """
+    pts = np.asarray(pts_xy, dtype=np.float64).reshape(-1, 2)
+    h, w = raw_shape[:2]
+    x, y = pts[:, 0].copy(), pts[:, 1].copy()
+    if flip_lr:
+        x = (w - 1) - x
+    if flip_ud:
+        y = (h - 1) - y
+    if rotate_deg:
+        m = cv2.getRotationMatrix2D((w / 2, h / 2), rotate_deg, 1.0)  # same matrix warpAffine applies
+        xy = m @ np.vstack([x, y, np.ones_like(x)])
+        x, y = xy[0], xy[1]
+    dim = SLICE_DIMENSION_10um[plane]  # (width, height)
+    x = x * (dim[0] / w)
+    y = y * (dim[1] / h)
+    src = np.stack([x, y], axis=1).reshape(-1, 1, 2)
+    return cv2.perspectiveTransform(src, np.asarray(matrix, dtype=np.float64)).reshape(-1, 2)
 
 
 def ccf_mm_to_plane_point(

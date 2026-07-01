@@ -1,21 +1,19 @@
 from __future__ import annotations
 
 import json
-import subprocess
-import sys
 from pathlib import Path
 
 import numpy as np
 import polars as pl
-from argclz import AbstractParser, argument
+from argclz import argument
 from brainglobe_atlasapi import BrainGlobeAtlas
 from neuralib.atlas.ccf.matrix import slice_transform_helper
 from neuralib.atlas.util import ALLEN_CCF_10um_BREGMA
-from neuralib.atlas.view import get_slice_view
 from neuralib.util.verbose import fprint, print_save
 
-from ccf2d.core import (TerminalLog, boundary_mask, ccf_mm_to_plane_point, plane_point_to_ccf_mm,
-                        read_oriented, region_name, rotate)
+from ccf2d.core import (boundary_mask, ccf_mm_to_plane_point, plane_point_to_ccf_mm,
+                        read_oriented, rotate)
+from ccf2d.slice_app import RegionPicker, SliceReconstructOptions
 
 __all__ = ['ProbeOptions']
 
@@ -24,9 +22,8 @@ MARKS = ('superficial', 'deep')
 _POINT = {'superficial': 'dorsal', 'deep': 'ventral'}
 _COLORS = ['red', 'salmon', 'darkred', 'cyan', 'yellow', 'magenta',
            'lime', 'green', 'blue', 'orange', 'white', 'black']
+SHADER_STYLES = ['plastic', 'cartoon', 'metallic', 'shiny', 'glossy']
 
-
-# --- pure view-models (no Qt): rendered into labels / passed to the renderer ----------------
 
 def _shank_table_html(pts: dict[tuple[int, str], tuple[float, float, float]]) -> str:
     """HTML table of picked points; each shank number is a ``del:<n>`` link to remove it."""
@@ -44,25 +41,11 @@ def _shank_table_html(pts: dict[tuple[int, str], tuple[float, float, float]]) ->
             + '</table><br><i>AP, DV, ML in mm · click a shank ✕ to remove it</i>')
 
 
-def _region_table_html(region_colors: dict[str, str]) -> str:
-    """HTML table of regions to render; each acronym is a ``rdel:<acr>`` link to remove it."""
-    if not region_colors:
-        return 'no regions'
-    rows = ['<tr><th>region</th><th>color</th></tr>']
-    for acr, c in region_colors.items():
-        rows.append(f'<tr><td><a href="rdel:{acr}">{acr} ✕</a></td>'
-                    f'<td><font color="{c}">■</font> {c}</td></tr>')
-    return '<table border=1 cellspacing=0 cellpadding=3>' + ''.join(rows) + '</table>'
-
-
-SHADER_STYLES = ['plastic', 'cartoon', 'metallic', 'shiny', 'glossy']
-
-
 def _render_command(csv: Path, plane: str, shanks: list[int], shank_colors: dict[int, str],
                     region_colors: dict[str, str], depth: int | None, interval: int | None,
                     style: str = 'plastic', no_root: bool = False, hemisphere: str = 'both') -> list[str]:
-    """``ProbeRenderCLI`` argv: per-shank dye colors, optional theoretical track, region meshes."""
-    cmd = [sys.executable, '-m', 'neuralib.atlas.brainrender.probe',
+    """``ProbeRenderCLI`` argv (after ``-m``): per-shank dye colors, optional track, region meshes."""
+    cmd = ['neuralib.atlas.brainrender.probe',
            '--file', str(csv), '--plane-type', plane, '--style', style, '--hemisphere', hemisphere,
            '--probe-color', ','.join(shank_colors.get(s, 'red') for s in shanks)]
     if no_root:
@@ -79,77 +62,26 @@ def _render_command(csv: Path, plane: str, shanks: list[int], shank_colors: dict
     return cmd
 
 
-class ProbeOptions(AbstractParser):
+class ProbeOptions(SliceReconstructOptions):
     DESCRIPTION = ('Reconstruct probe shanks from dye labels on registered slices (napari). '
                    'Pick superficial+deep per shank across serial sections, then render with brainrender.')
 
-    directory: Path | None = argument(
-        '-D', '--directory',
-        default=None,
-        help='folder of serial sections (steps through them; reads <dir>/transformations/<stem>_transform.json)'
-    )
-
-    raw_image: Path | None = argument(
-        '-I', '--image',
-        default=None,
-        help='single registered histology image (alternative to -D)'
-    )
-
-    transform_dir: Path | None = argument(
-        '--transform-dir',
-        default=None,
-        help='where the *_transform.json live (default: <image-dir>/transformations)'
-    )
-
-    output: Path | None = argument(
-        '-O', '--output',
-        default=None,
-        help='output points csv (default: <dir>/probe_shanks.csv)'
-    )
-
     depth: int | None = argument(
-        '--depth',
-        default=None,
-        help='implant depth (µm); if set, render adds the theoretical track, else dye-only'
-    )
+        '--depth', default=None,
+        help='implant depth (µm); if set, render adds the theoretical track, else dye-only')
 
     interval: int | None = argument(
-        '--interval',
-        default=None,
-        help='shank interval (µm) for a multi-shank theoretical track'
-    )
-
-    _IMG_EXT = {'.tif', '.tiff', '.png', '.jpg', '.jpeg'}
-
-    def _list_images(self, d: Path) -> list[Path]:
-        return sorted(p for p in Path(d).iterdir() if p.suffix.lower() in self._IMG_EXT)
+        '--interval', default=None,
+        help='shank interval (µm) for a multi-shank theoretical track')
 
     def run(self):
-        files = self._list_images(self.directory) if self.directory else []
-        if files and self.raw_image is None:
-            self.raw_image = files[0]
-        if self.raw_image is None:
-            raise ValueError('provide a registered image via -I/--image or a folder via -D/--directory')
-
-        base = self.raw_image.parent
-        self._tdir = self.transform_dir or base / 'transformations'
-        self._out = self.output or base / 'probe_shanks.csv'
-
-        first = self._transform_path(self.raw_image)
-        if not first.exists():
-            raise FileNotFoundError(
-                f'no native registration {first} — register with `ccf2d register` first '
-                f'(legacy MATLAB .mat is not supported)')
+        files = self._resolve_paths('probe_shanks.csv')
         self._launch_napari(files)
-
-    def _transform_path(self, img: Path) -> Path:
-        return self._tdir / f'{img.stem}_transform.json'
 
     def _launch_napari(self, files: list[Path]):
         import napari
         from napari.utils import Colormap
-        from magicgui.widgets import (CheckBox, ComboBox, Container, Label, LineEdit, PushButton,
-                                      Select, SpinBox)
+        from magicgui.widgets import CheckBox, ComboBox, Container, Label, PushButton, SpinBox
 
         viewer = napari.Viewer(title='ccf2d probe')
         viewer.text_overlay.visible = True
@@ -157,9 +89,6 @@ class ProbeOptions(AbstractParser):
         viewer.text_overlay.color = 'yellow'
 
         bg = BrainGlobeAtlas('allen_mouse_10um')
-        # region picker drives the brainrender; show "ACR — full name" but keep the acronym as value
-        region_pairs = [(f"{a} — {bg.structures[a]['name']}", a)
-                        for a in sorted(bg.structures.acronym_to_id_map)]
 
         # pts[(shank, 'dorsal'|'ventral')] = (AP, DV, ML) bregma-relative mm; crosses re-derived per slice
         state: dict = {'pts': {}, 'files': files, 'cursor': 0, 'plane': None,
@@ -187,15 +116,7 @@ class ProbeOptions(AbstractParser):
             for i, lyr in enumerate(l for l in stack if l is not None and l in viewer.layers):
                 viewer.layers.move(viewer.layers.index(lyr), i)
 
-        # scrolling terminal-style log (same as register): every status.value = msg appends a line
-        status_label = Label(value='')
-        status_label.native.setStyleSheet(
-            'font-family: Menlo, Consolas, monospace; font-size: 12px; '
-            'color: #b9f27c; background: #11131a; padding: 6px;')
-        status_label.native.setWordWrap(True)
-        from qtpy.QtWidgets import QSizePolicy
-        status_label.native.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
-        status = TerminalLog(status_label)
+        status_label, status = self.make_status_log()
         status.value = 'load a registered slice to begin'
         summary = Label(value='')
         summary.native.setWordWrap(True)
@@ -203,14 +124,7 @@ class ProbeOptions(AbstractParser):
         slice_lbl = Label(value='no slice loaded')  # current file (i/N) shown in the Slice section
         slice_lbl.native.setWordWrap(True)
 
-        views: dict = {}  # cache (plane, res) -> (reference_view, annotation_view); volume load is slow
-
-        def get_views(plane: str, res: int):
-            key = (plane, res)
-            if key not in views:
-                views[key] = (get_slice_view('reference', plane, resolution=res),
-                              get_slice_view('annotation', plane, resolution=res))
-            return views[key]
+        get_views = self.make_view_cache()
 
         def redraw_crosses():
             # reconstruct each point's pixel from its CCF coord; show it if it lands on this slice
@@ -301,57 +215,15 @@ class ProbeOptions(AbstractParser):
                             f'AP {ccf[0]:.2f}, DV {ccf[1]:.2f}, ML {ccf[2]:.2f} mm')
             refresh_summary()
 
-        @viewer.mouse_move_callbacks.append
-        def on_move(_v, event):
-            ann = state['ann_img']
-            if ann is None:
-                return
-            y, x = event.position
-            viewer.text_overlay.text = region_name(ann, bg.structures, y, x)
-            rid = (int(ann[int(y), int(x)])
-                   if 0 <= y < ann.shape[0] and 0 <= x < ann.shape[1] else 0)
-            if rid != state['hover_id']:
-                state['hover_id'] = rid
-                highlight_layer.data = (ann == rid).astype(float) if rid else np.zeros(ann.shape)
+        viewer.mouse_move_callbacks.append(self.make_hover(viewer, state, bg.structures, highlight_layer))
 
         shank_w = SpinBox(label='shank', value=1, min=1, max=64)
         mark_w = ComboBox(label='marking', choices=list(MARKS), value=MARKS[0])
 
-        # atlas regions to render: pick region(s) in the (filterable) list, choose a color, Add.
-        # region_colors keeps each region with its own color, in render order.
-        region_colors: dict[str, str] = {}
-        search_w = LineEdit(label='filter')
-        region_w = Select(label='regions', choices=region_pairs)
-        region_w.native.setMinimumHeight(240)  # show more of the 840-region list at once
-        region_color_w = ComboBox(label='color', choices=_COLORS, value='red')
+        regions = RegionPicker(bg.structures)
         style_w = ComboBox(label='style', choices=SHADER_STYLES, value=SHADER_STYLES[0])
         hemisphere_w = ComboBox(label='hemisphere', choices=['both', 'left', 'right'], value='both')
         no_root_w = CheckBox(label='no root (hide brain)', value=False)
-        add_region_btn = PushButton(text='+ Add region(s)')
-        region_lbl = Label(value='no regions')
-        region_lbl.native.setOpenExternalLinks(False)
-
-        def apply_filter(*_):
-            q = search_w.value.strip().lower()
-            region_w.choices = [p for p in region_pairs if q in p[0].lower()] if q else list(region_pairs)
-
-        def refresh_region_table():
-            region_lbl.value = _region_table_html(region_colors)
-
-        def add_regions(*_):
-            for acr in region_w.value:
-                region_colors[acr] = region_color_w.value  # add or recolor
-            refresh_region_table()
-
-        def on_region_link(href: str):
-            if href.startswith('rdel:'):
-                region_colors.pop(href[len('rdel:'):], None)
-                refresh_region_table()
-
-        search_w.changed.connect(apply_filter)
-        add_region_btn.changed.connect(add_regions)
-        region_lbl.native.linkActivated.connect(on_region_link)
-        refresh_region_table()
 
         # per-shank dye color: pick a shank (above), then set its color here
         shank_colors: dict[int, str] = {}  # shank -> dye color; default red
@@ -410,12 +282,12 @@ class ProbeOptions(AbstractParser):
                 return
             shanks = sorted({s for s, _ in state['pts']})  # same order as the saved CSV rows
             cmd = _render_command(csv, state['plane'] or 'coronal', shanks, shank_colors,
-                                  region_colors, self.depth, self.interval, style_w.value,
+                                  regions.colors, self.depth, self.interval, style_w.value,
                                   no_root_w.value, hemisphere_w.value)
-            status.value = (f'rendering ({len(shanks)} shank(s)'
-                            + (f', {len(region_colors)} region(s)' if region_colors else '')
-                            + ') in a separate window...')
-            subprocess.Popen(cmd)
+            self.launch_render(cmd, status,
+                               f'rendering ({len(shanks)} shank(s)'
+                               + (f', {len(regions.colors)} region(s)' if regions.colors else '')
+                               + ') in a separate window...')
 
         def invert_ml():
             if not state['pts']:
@@ -456,29 +328,16 @@ class ProbeOptions(AbstractParser):
         render_btn = PushButton(text='Render (brainrender)')
         render_btn.changed.connect(lambda *_: on_render())
 
-        def header(text):
-            lbl = Label(value=text)
-            lbl.native.setStyleSheet('font-weight: bold; color: #88c0d0; padding-top: 6px;')
-            return lbl
-
-        def srow(*ws):
-            return Container(widgets=list(ws), layout='horizontal', labels=False)
-
         panel = Container(widgets=[
-            header('Slice'), slice_lbl, srow(prev_btn, next_btn),
-            header('Dye point'), shank_w, mark_w, probe_color_w,
-            header('Accumulated'), summary, invert_btn,
-            header('Regions'), search_w, region_w, srow(region_color_w, add_region_btn), region_lbl,
-            header('Render'), srow(style_w, hemisphere_w), no_root_w, render_btn,
-            header('CSV'), srow(load_btn, save_btn),
+            self.header('Slice'), slice_lbl, self.srow(prev_btn, next_btn),
+            self.header('Dye point'), shank_w, mark_w, probe_color_w,
+            self.header('Accumulated'), summary, invert_btn,
+            self.header('Regions'), *regions.widgets,
+            self.header('Render'), self.srow(style_w, hemisphere_w), no_root_w, render_btn,
+            self.header('CSV'), self.srow(load_btn, save_btn),
             status_label,
         ])
-        from qtpy.QtWidgets import QScrollArea
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)  # panel fills the dock width; scrolls vertically when tall
-        scroll.setWidget(panel.native)
-        scroll.setMinimumWidth(360)  # start the sidebar wide enough for the tables/region list
-        viewer.window.add_dock_widget(scroll, area='right', name='probe')
+        self.add_scroll_dock(viewer, panel, 'probe')
 
         if state['files']:
             load_slice(state['files'][0])

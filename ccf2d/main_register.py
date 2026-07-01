@@ -291,6 +291,8 @@ class RegisterOptions(AbstractParser):
             'font-family: Menlo, Consolas, monospace; font-size: 12px; '
             'color: #b9f27c; background: #11131a; padding: 6px;')
         status_label.native.setWordWrap(True)
+        from qtpy.QtWidgets import QSizePolicy
+        status_label.native.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         status = TerminalLog(status_label)
         status.value = 'click an atlas landmark (left), then its match on the slice (right)'
 
@@ -561,6 +563,11 @@ class RegisterOptions(AbstractParser):
             status.value = f'resumed: {len(load.get("slice_xy", []))} pair(s) loaded'
         elif state['files']:
             load_slice(0)  # show "i/N" + auto-resume the first serial section
+        elif self.raw_image is not None:  # single -I: auto-resume its saved transform like directory mode
+            js = out_dir / f'{name}_transform.json'
+            if js.exists():
+                restore_from_meta(json.loads(js.read_text()))
+                status.value = f'{name} — resumed saved registration'
 
         def header(text):
             lbl = Label(value=text)

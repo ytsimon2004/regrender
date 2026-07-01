@@ -20,6 +20,27 @@ def test_estimate_transform_projective_roundtrip():
     assert np.allclose(mapped, atlas_xy, atol=1e-3)
 
 
+def test_raw_points_to_atlas_matches_matrix():
+    from neuralib.atlas.ccf.matrix import SLICE_DIMENSION_10um
+    plane = 'coronal'
+    w, h = SLICE_DIMENSION_10um[plane]  # raw_shape == dim -> resize is identity
+    m = np.array([[1.1, 0.05, 5.0], [0.02, 0.95, -3.0], [1e-4, 0.0, 1.0]])
+    pts = np.array([[10.0, 20.0], [30.0, 5.0], [100.0, 80.0]])
+    expect = cv2.perspectiveTransform(pts.reshape(-1, 1, 2), m).reshape(-1, 2)
+    out = core.raw_points_to_atlas(pts, matrix=m, raw_shape=(h, w), plane=plane)
+    assert np.allclose(out, expect)
+
+
+def test_raw_points_to_atlas_flip_lr():
+    from neuralib.atlas.ccf.matrix import SLICE_DIMENSION_10um
+    plane = 'coronal'
+    w, h = SLICE_DIMENSION_10um[plane]
+    pts = np.array([[10.0, 20.0], [30.0, 5.0]])
+    out = core.raw_points_to_atlas(pts, matrix=np.eye(3), raw_shape=(h, w), plane=plane, flip_lr=True)
+    assert np.allclose(out[:, 0], (w - 1) - pts[:, 0])  # x mirrored
+    assert np.allclose(out[:, 1], pts[:, 1])            # y unchanged
+
+
 def test_estimate_transform_affine_shape():
     slice_xy = np.array([[0, 0], [10, 0], [0, 10]], float)
     atlas_xy = np.array([[1, 1], [11, 1], [1, 11]], float)
