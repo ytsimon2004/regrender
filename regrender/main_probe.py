@@ -74,7 +74,7 @@ class ProbeOptions(SliceReconstructOptions):
         help='shank interval (µm) for a multi-shank theoretical track')
 
     def run(self):
-        files = self._resolve_paths('probe_shanks.csv')
+        files = self._resolve_paths('probe/probe_shanks.csv')
         self._launch_napari(files)
 
     def _launch_napari(self, files: list[Path]):
