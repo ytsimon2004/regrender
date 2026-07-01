@@ -9,7 +9,7 @@ authors = [
 requires-python = ">=3.12"
 dependencies = [
     "argclz>=1.0.1",
-    "neura-library[atlas]>=0.5.2",
+    "neuralib-atlas[brainrender]>=0.7.3",
     "numba>=0.60",
     "napari[pyqt5]",
     "imageio",

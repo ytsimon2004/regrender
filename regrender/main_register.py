@@ -10,13 +10,18 @@ from brainglobe_atlasapi import BrainGlobeAtlas
 from neuralib.atlas.ccf.matrix import SLICE_DIMENSION_10um
 from neuralib.atlas.typing import PLANE_TYPE
 from neuralib.atlas.view import get_slice_view
-from neuralib.imglib.transform import apply_transformation
 from neuralib.util.verbose import fprint, print_save
 
 from regrender.core import (TerminalLog, boundary_mask, estimate_transform, load_transform, read_oriented,
                         region_name, rotate, save_transform, to_uint8)
 
 __all__ = ['RegisterOptions']
+
+
+def apply_transformation(img: np.ndarray, m: np.ndarray) -> np.ndarray:
+    # ponytail: inlined from the archived neuralib.imglib to avoid depending on neuralib-imaging
+    h, w = img.shape[:2]
+    return cv2.warpPerspective(img, m, (w, h))
 
 
 class RegisterOptions(AbstractParser):
