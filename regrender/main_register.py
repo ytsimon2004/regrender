@@ -599,8 +599,13 @@ class RegisterOptions(AbstractParser):
             ]
         )
         panel.native.setStyleSheet('QPushButton { padding: 4px; }')
+        # scroll the panel so the bottom (save/status) stays reachable on short screens
+        from qtpy.QtWidgets import QScrollArea
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setWidget(panel.native)
         viewer.window.add_dock_widget(
-            panel, area='right', name='register'
+            scroll, area='right', name='register'
         )
         fprint(f'registering {name}: pick points, Preview to verify, Save when done')
         napari.run()

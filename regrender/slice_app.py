@@ -150,8 +150,8 @@ class SliceReconstructOptions(AbstractParser):
         def get_views(plane: str, res: int):
             key = (plane, res)
             if key not in views:
-                views[key] = (get_slice_view('reference', plane, resolution=res),
-                              get_slice_view('annotation', plane, resolution=res))
+                views[key] = (get_slice_view('reference', plane, resolution=res, check_latest=False),
+                              get_slice_view('annotation', plane, resolution=res, check_latest=False))
             return views[key]
 
         return get_views
