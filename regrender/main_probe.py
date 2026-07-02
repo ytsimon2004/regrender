@@ -135,7 +135,7 @@ class ProbeOptions(SliceReconstructOptions):
         def redraw_crosses():
             # reconstruct each point's pixel from its CCF coord; show it if it lands on this slice
             view, off = state['view'], state['plane_off']
-            here, labels = [], []
+            here, labels, keys = [], [], []
             if view is not None and off is not None:
                 for (shank, point), ccf in state['pts'].items():
                     plane, x, y = ccf_mm_to_plane_point(ccf, project_index=view.project_index,
@@ -144,8 +144,28 @@ class ProbeOptions(SliceReconstructOptions):
                     if 0 <= yi < off.shape[0] and 0 <= xi < off.shape[1] and abs(off[yi, xi] - plane) <= 1:
                         here.append([y, x])
                         labels.append(f'{shank} ({point[0]})')  # e.g. "0 (d)" / "0 (v)"
+                        keys.append((shank, point))
+            state['cross_here'], state['cross_keys'] = here, keys  # parallel to displayed points
+            state['syncing'] = True  # guard: our own data write must not re-enter the delete handler
             click_layer.data = np.array(here) if here else np.empty((0, 2))
             click_layer.features = {'label': np.array(labels, dtype='<U8')}
+            state['syncing'] = False
+
+        def on_crosses_edited(_event=None):
+            # deleting a cross in napari only mutates the layer; mirror it back into state + table
+            if state.get('syncing'):
+                return
+            survivors = {(round(y, 3), round(x, 3)) for y, x in click_layer.data}
+            removed = [k for k, (y, x) in zip(state.get('cross_keys', []), state.get('cross_here', []))
+                       if (round(y, 3), round(x, 3)) not in survivors]
+            if not removed:
+                return
+            for k in removed:
+                state['pts'].pop(k, None)
+                state['src'].pop(k, None)
+            refresh_summary()
+            redraw_crosses()
+            status.value = f'removed {len(removed)} point(s)'
 
         def load_slice(img: Path):
             tp = self._transform_path(img)
@@ -199,6 +219,7 @@ class ProbeOptions(SliceReconstructOptions):
 
         summary.native.setOpenExternalLinks(False)
         summary.native.linkActivated.connect(on_table_link)
+        click_layer.events.data.connect(on_crosses_edited)
 
         @viewer.mouse_drag_callbacks.append
         def on_click(_v, event):
@@ -267,7 +288,7 @@ class ProbeOptions(SliceReconstructOptions):
             redraw_crosses()  # crosses are reconstructed from the loaded coordinates
             status.value = f'loaded {len({s for s, _ in state["pts"]})} shank(s) from {path.name}'
 
-        def save_csv() -> Path | None:
+        def build_rows() -> list[dict] | None:
             shanks = sorted({s for s, _ in state['pts']})
             rows = []
             for s in shanks:
@@ -282,15 +303,24 @@ class ProbeOptions(SliceReconstructOptions):
             if not rows:
                 status.value = 'no points to save'
                 return None
+            return rows
+
+        def save_csv() -> Path | None:
+            rows = build_rows()
+            if rows is None:
+                return None
             self._out.parent.mkdir(parents=True, exist_ok=True)
             pl.DataFrame(rows).write_csv(self._out)
-            status.value = f'saved {len(shanks)} shank(s) -> {self._out}'
+            status.value = f'saved {len({r["probe_idx"] for r in rows})} shank(s) -> {self._out}'
             return self._out
 
         def on_render():
-            csv = save_csv()
-            if csv is None:
+            rows = build_rows()  # render from current points without touching the session CSV
+            if rows is None:
                 return
+            import tempfile
+            csv = Path(tempfile.gettempdir()) / 'regrender_probe_render.csv'
+            pl.DataFrame(rows).write_csv(csv)
             shanks = sorted({s for s, _ in state['pts']})  # same order as the saved CSV rows
             cmd = _render_command(csv, state['plane'] or 'coronal', shanks, shank_colors,
                                   regions.colors, self.depth, self.interval, style_w.value,
