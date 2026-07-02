@@ -8,7 +8,7 @@ from argclz import argument
 from brainglobe_atlasapi import BrainGlobeAtlas
 from neuralib.atlas.ccf.matrix import slice_transform_helper
 from neuralib.atlas.util import ALLEN_CCF_10um_BREGMA
-from neuralib.util.verbose import fprint, print_save
+from neuralib.util.verbose import fprint
 
 from regrender.core import (boundary_mask, ccf_mm_to_plane_point, load_transform, plane_point_to_ccf_mm,
                         read_oriented, rotate)
@@ -284,8 +284,7 @@ class ProbeOptions(SliceReconstructOptions):
                 return None
             self._out.parent.mkdir(parents=True, exist_ok=True)
             pl.DataFrame(rows).write_csv(self._out)
-            print_save(self._out)
-            status.value = f'saved {len(shanks)} shank(s) -> {self._out.name}'
+            status.value = f'saved {len(shanks)} shank(s) -> {self._out}'
             return self._out
 
         def on_render():

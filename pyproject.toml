@@ -13,6 +13,7 @@ dependencies = [
     "numba>=0.60",
     "napari[pyqt5]",
     "imageio",
+    "rich",
 ]
 
 [project.optional-dependencies]

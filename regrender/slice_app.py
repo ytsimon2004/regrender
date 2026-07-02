@@ -137,13 +137,17 @@ class SliceReconstructOptions(AbstractParser):
         """A scrolling terminal-style status: a monospace ``Label`` + its :class:`TerminalLog`.
         Returns ``(label_widget, TerminalLog)``; ``log.value = msg`` appends a line."""
         from magicgui.widgets import Label
+        from qtpy.QtCore import Qt
         from qtpy.QtWidgets import QSizePolicy
         label = Label(value='')
         label.native.setStyleSheet(
             'font-family: Menlo, Consolas, monospace; font-size: 12px; '
-            'color: #b9f27c; background: #11131a; padding: 6px;')
+            'background: #11131a; padding: 6px;')  # per-line color comes from TerminalLog HTML
         label.native.setWordWrap(True)
-        label.native.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)  # extends with the dock
+        label.native.setTextFormat(Qt.RichText)
+        label.native.setAlignment(Qt.AlignLeft | Qt.AlignTop)  # fill from the top
+        label.native.setMinimumHeight(220)  # roomy console area
+        label.native.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)  # grows with the dock
         return label, TerminalLog(label)
 
     @staticmethod

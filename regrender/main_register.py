@@ -10,7 +10,7 @@ from brainglobe_atlasapi import BrainGlobeAtlas
 from neuralib.atlas.ccf.matrix import SLICE_DIMENSION_10um
 from neuralib.atlas.typing import PLANE_TYPE
 from neuralib.atlas.view import get_slice_view
-from neuralib.util.verbose import fprint, print_save
+from neuralib.util.verbose import fprint
 
 from regrender.core import (TerminalLog, boundary_mask, estimate_transform, load_transform, read_oriented,
                         region_name, rotate, save_transform, to_uint8)
@@ -289,14 +289,18 @@ class RegisterOptions(AbstractParser):
         info_w = Label(value=info_text())
         img_lbl = Label(value='no image loaded')  # current file (i/N) shown in the Image section
         img_lbl.native.setWordWrap(True)
-        # scrolling terminal-style log: every status.value = msg appends a line (monospace)
+        # scrolling terminal-style log: every status.value = msg appends a timestamped, colored line
         status_label = Label(value='')
         status_label.native.setStyleSheet(
             'font-family: Menlo, Consolas, monospace; font-size: 12px; '
-            'color: #b9f27c; background: #11131a; padding: 6px;')
+            'background: #11131a; padding: 6px;')  # per-line color comes from TerminalLog HTML
         status_label.native.setWordWrap(True)
+        from qtpy.QtCore import Qt
         from qtpy.QtWidgets import QSizePolicy
-        status_label.native.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        status_label.native.setTextFormat(Qt.RichText)
+        status_label.native.setAlignment(Qt.AlignLeft | Qt.AlignTop)
+        status_label.native.setMinimumHeight(220)
+        status_label.native.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         status = TerminalLog(status_label)
         status.value = 'click an atlas landmark (left), then its match on the slice (right)'
 
@@ -378,18 +382,19 @@ class RegisterOptions(AbstractParser):
                 status.value = 'save cancelled'
                 return
             contrast = tuple(float(v) for v in hist_layer.contrast_limits)
-            print_save(save_transform(m, output_dir=out_dir, name=name, plane=self.cut_plane,
-                                      resolution=self.resolution, slice_index=state['index'],
-                                      dw=state['dw'], dh=state['dh'], slice_xy=s, atlas_xy=a,
-                                      rotate=rot_w.value, flip_lr=self.flip_lr, flip_ud=self.flip_ud,
-                                      contrast=contrast))
+            js = save_transform(m, output_dir=out_dir, name=name, plane=self.cut_plane,
+                                resolution=self.resolution, slice_index=state['index'],
+                                dw=state['dw'], dh=state['dh'], slice_xy=s, atlas_xy=a,
+                                rotate=rot_w.value, flip_lr=self.flip_lr, flip_ud=self.flip_ud,
+                                contrast=contrast)
+            status.value = f'saved -> {js}'
 
             # warped histology in atlas space, and a copy with the boundaries burned in.
             # bake the layer's contrast window so the .tif matches what you see.
             warped = to_uint8(apply_transformation(state['hist'], m), contrast)
             trans_path = out_dir / f'{name}_transformed.tif'
             iio.imwrite(trans_path, warped)
-            print_save(trans_path)
+            status.value = f'saved -> {trans_path}'
 
             rgb = warped if warped.ndim == 3 else np.stack([warped] * 3, axis=-1)
             rgb = rgb[..., :3].copy()
@@ -398,9 +403,7 @@ class RegisterOptions(AbstractParser):
             rgb[boundary_mask(state['ann']).astype(bool)] = tuple(int(c * 255) for c in bcol)
             overlay_path = out_dir / f'{name}_overlay.tif'
             iio.imwrite(overlay_path, rgb)
-            print_save(overlay_path)
-
-            status.value = f'saved {name} transform (.json) + transformed/overlay .tif'
+            status.value = f'saved -> {overlay_path}'
 
         def on_undo():
             # remove the most recently added point and restore the alternation state

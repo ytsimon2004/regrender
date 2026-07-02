@@ -19,7 +19,7 @@ from argclz import argument
 from brainglobe_atlasapi import BrainGlobeAtlas
 from neuralib.atlas.ccf.matrix import slice_transform_helper
 from neuralib.atlas.util import ALLEN_CCF_10um_BREGMA
-from neuralib.util.verbose import fprint, print_save
+from neuralib.util.verbose import fprint
 
 from regrender.core import (boundary_mask, load_transform, plane_point_to_ccf_mm, raw_points_to_atlas,
                         read_oriented, region_name, rotate)
@@ -156,8 +156,7 @@ class RoiOptions(SliceReconstructOptions):
         out = self._ccf_out()
         out.parent.mkdir(parents=True, exist_ok=True)
         pl.DataFrame(ccf_rows).write_csv(out)  # combined artifact (with channel column)
-        print_save(out)
-        msg(f'projected {len(ccf_rows)} ROI(s) -> {out.name}')
+        msg(f'projected {len(ccf_rows)} ROI(s) -> {out}')  # full path; GUI mirrors it to the terminal
         return out, ccf_rows
 
     def _run_project_headless(self):
@@ -385,8 +384,7 @@ class RoiOptions(SliceReconstructOptions):
                 return None
             self._out.parent.mkdir(parents=True, exist_ok=True)
             pl.DataFrame(rows_from_state()).write_csv(self._out)
-            print_save(self._out)
-            status.value = f'saved {len(state["rois"])} raw ROI(s) -> {self._out.name}'
+            status.value = f'saved {len(state["rois"])} raw ROI(s) -> {self._out}'
             return self._out
 
         def load_csv_points(path: Path):

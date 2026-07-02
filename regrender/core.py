@@ -24,6 +24,18 @@ __all__ = [
 ]
 
 
+def _console():
+    """Cached rich Console for the terminal mirror (created lazily to keep import light)."""
+    global _CONSOLE
+    if _CONSOLE is None:
+        from rich.console import Console
+        _CONSOLE = Console()
+    return _CONSOLE
+
+
+_CONSOLE = None
+
+
 class TransformMeta(TypedDict):
     """Schema of a ``*_transform.json`` — the histology→atlas registration written by
     ``save_transform`` and consumed by the probe/roi modes. ``rotate``/``flip_lr``/``flip_ud``
@@ -48,12 +60,49 @@ def load_transform(path: Path) -> TransformMeta:
 
 
 class TerminalLog:
-    """Append-only view over a magicgui Label so ``status.value = msg`` scrolls like a terminal
-    (keeps the last ``maxlines`` messages) instead of replacing a single line."""
+    """Append-only rich-console view over a magicgui Label: ``status.value = msg`` appends a
+    timestamped, color-highlighted line (QLabel renders HTML) and scrolls like a terminal,
+    keeping the last ``maxlines`` messages. Level (hence color) is inferred from the message;
+    pass it explicitly with ``log.log(msg, 'error')`` when the heuristic isn't enough."""
 
-    def __init__(self, label, maxlines: int = 12):
+    # level -> (panel HTML hex, rich terminal style)
+    _COLORS = {'error': ('#ff6b6b', 'bold red'), 'warning': ('#f2c14e', 'yellow'),
+               'save': ('#8bd450', 'green'), 'io': ('#56b6c2', 'cyan'), 'info': ('#d0d0d0', '')}
+
+    def __init__(self, label, maxlines: int = 200, echo: bool = True):
         self._label = label
         self._lines: deque[str] = deque(maxlen=maxlines)
+        self._echo = echo  # also mirror each line to the terminal (persistent, copyable log)
+
+    @staticmethod
+    def _infer(msg: str) -> str:
+        m = msg.lower()
+        if any(k in m for k in ('fail', 'error', 'cannot', "n't", 'invalid')):
+            return 'error'
+        if any(k in m for k in ('missing', 'cancel', 'no points', 'nothing', 'not ', 'stale')):
+            return 'warning'
+        if any(k in m for k in ('saved', 'save', '->', 'wrote', 'written')):
+            return 'save'
+        if any(k in m for k in ('load', 'render', 'resum', 'projected')):
+            return 'io'
+        return 'info'
+
+    def log(self, msg: str, level: str | None = None):
+        import html
+        from datetime import datetime
+        msg = str(msg)
+        hexc, style = self._COLORS.get(level or self._infer(msg), self._COLORS['info'])
+        ts = datetime.now().strftime('%H:%M:%S')
+        self._lines.append(
+            f'<span style="color:#6b7280">{ts}</span> '
+            f'<span style="color:{hexc}">{html.escape(msg)}</span>')
+        self._label.value = '<br>'.join(self._lines)
+        if self._echo:  # mirror to terminal via rich (auto-strips color when piped)
+            from rich.text import Text
+            line = Text()
+            line.append(ts + ' ', style='dim')
+            line.append(msg, style=style)  # append is literal — no markup injection from msg
+            _console().print(line)
 
     @property
     def value(self) -> str:
@@ -61,8 +110,7 @@ class TerminalLog:
 
     @value.setter
     def value(self, msg: str):
-        self._lines.append(f'> {msg}')
-        self._label.value = '\n'.join(self._lines)
+        self.log(msg)
 
 
 # --- image preprocessing ---------------------------------------------------
