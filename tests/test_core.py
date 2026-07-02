@@ -1,4 +1,4 @@
-"""Unit tests for regrender.core (pure, GUI-free helpers)."""
+"""Unit tests for regrender._core (pure, GUI-free helpers)."""
 import json
 
 import cv2
@@ -6,7 +6,7 @@ import imageio.v3 as iio
 import numpy as np
 import pytest
 
-from regrender import core
+from regrender import _core as core
 
 
 # --- transform -------------------------------------------------------------

@@ -4,23 +4,99 @@ Both modes step through registered serial sections, pick points that resolve to 
 mm, paint atlas region boundaries / the region under the cursor, pick atlas regions to render,
 and shell out to a brainrender CLI. That common plumbing lives here; each mode subclasses
 :class:`SliceReconstructOptions` and supplies only its own image display + click semantics +
-render argv. The pure (GUI-free) coordinate/image helpers stay in :mod:`regrender.core`.
+render argv. The pure (GUI-free) coordinate/image helpers stay in :mod:`regrender._core`.
 """
 from __future__ import annotations
 
 import subprocess
 import sys
+from collections import deque
 from pathlib import Path
 
 import numpy as np
 from argclz import AbstractParser, argument
 from neuralib.atlas.view import get_slice_view
 
-from regrender.core import TerminalLog, region_name
+from regrender._core import region_name
 
-__all__ = ['SliceReconstructOptions', 'RegionPicker']
+__all__ = ['SliceReconstructOptions', 'RegionPicker', 'TerminalLog']
 
 _IMG_EXT = {'.tif', '.tiff', '.png', '.jpg', '.jpeg'}
+
+
+def _console():
+    """Cached rich Console for the terminal mirror (created lazily to keep import light)."""
+    global _CONSOLE
+    if _CONSOLE is None:
+        from rich.console import Console
+        _CONSOLE = Console()
+    return _CONSOLE
+
+
+_CONSOLE = None
+
+
+class TerminalLog:
+    """Append-only rich-console view over a magicgui Label: ``status.value = msg`` appends a
+    timestamped, color-highlighted line (QLabel renders HTML) and scrolls like a terminal,
+    keeping the last ``maxlines`` messages. Level (hence color) is inferred from the message;
+    pass it explicitly with ``log.log(msg, 'error')`` when the heuristic isn't enough."""
+
+    # level -> (panel HTML hex, rich terminal style)
+    _COLORS = {
+        'error': ('#ff6b6b', 'bold red'),
+        'warning': ('#f2c14e', 'yellow'),
+        'save': ('#8bd450', 'green'),
+        'io': ('#56b6c2', 'cyan'),
+        'info': ('#d0d0d0', '')
+    }
+
+    def __init__(self, label, maxlines: int = 200, echo: bool = True):
+        self._label = label
+        self._lines: deque[str] = deque(maxlen=maxlines)
+        self._echo = echo  # also mirror each line to the terminal (persistent, copyable log)
+
+    @staticmethod
+    def _infer(msg: str) -> str:
+        m = msg.lower()
+        if any(k in m for k in ('fail', 'error', 'cannot', "n't", 'invalid')):
+            return 'error'
+        if any(k in m for k in ('missing', 'cancel', 'no points', 'nothing', 'not ', 'stale')):
+            return 'warning'
+        if any(k in m for k in ('saved', 'save', '->', 'wrote', 'written')):
+            return 'save'
+        if any(k in m for k in ('load', 'render', 'resum', 'projected')):
+            return 'io'
+        return 'info'
+
+    def log(self, msg: str, level: str | None = None):
+        import html
+        from datetime import datetime
+
+        msg = str(msg)
+        hexc, style = self._COLORS.get(level or self._infer(msg), self._COLORS['info'])
+        ts = datetime.now().strftime('%H:%M:%S')
+
+        self._lines.append(
+            f'<span style="color:#6b7280">{ts}</span> '
+            f'<span style="color:{hexc}">{html.escape(msg)}</span>'
+        )
+        self._label.value = '<br>'.join(self._lines)
+
+        if self._echo:  # mirror to terminal via rich (auto-strips color when piped)
+            from rich.text import Text
+            line = Text()
+            line.append(ts + ' ', style='dim')
+            line.append(msg, style=style)  # append is literal — no markup injection from msg
+            _console().print(line)
+
+    @property
+    def value(self) -> str:
+        return '\n'.join(self._lines)
+
+    @value.setter
+    def value(self, msg: str):
+        self.log(msg)
 
 
 def region_table_html(region_colors: dict[str, str]) -> str:

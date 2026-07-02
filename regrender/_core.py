@@ -7,7 +7,6 @@ helpers. The napari front-ends live in the ``main_*`` modules.
 from __future__ import annotations
 
 import json
-from collections import deque
 from pathlib import Path
 from typing import Any, TypedDict
 
@@ -19,98 +18,47 @@ from neuralib.atlas.typing import PLANE_TYPE
 
 __all__ = [
     'read_oriented', 'rotate', 'to_uint8', 'boundary_mask', 'region_name',
-    'estimate_transform', 'save_transform', 'plane_point_to_ccf_mm', 'ccf_mm_to_plane_point',
-    'raw_points_to_atlas', 'TransformMeta', 'load_transform', 'TerminalLog',
+    'estimate_transform', 'save_transform', 'apply_transformation',
+    'plane_point_to_ccf_mm', 'ccf_mm_to_plane_point',
+    'raw_points_to_atlas', 'TransformMeta', 'load_transform',
 ]
 
 
-def _console():
-    """Cached rich Console for the terminal mirror (created lazily to keep import light)."""
-    global _CONSOLE
-    if _CONSOLE is None:
-        from rich.console import Console
-        _CONSOLE = Console()
-    return _CONSOLE
-
-
-_CONSOLE = None
-
+# --- transform meta --------------------------------------------------
 
 class TransformMeta(TypedDict):
     """Schema of a ``*_transform.json`` — the histology→atlas registration written by
     ``save_transform`` and consumed by the probe/roi modes. ``rotate``/``flip_lr``/``flip_ud``
     record the preprocessing so raw points can be replayed into atlas space."""
-    matrix: list[list[float]]  # 3x3 homography (resized-slice -> atlas-plane pixels)
+    matrix: list[list[float]]
+    """3x3 homography (resized-slice -> atlas-plane pixels)"""
     plane: PLANE_TYPE
+    """cutting plane, selects the resize dimension"""
     resolution: int
+    """atlas resolution (um)"""
     slice_index: int
+    """voxel plane index the slice was registered to"""
     dw: int
+    """resize width the matrix was fit on (SLICE_DIMENSION_10um[plane])"""
     dh: int
+    """resize height the matrix was fit on"""
     rotate: float
+    """rotation (deg) applied before resize/matrix, for replay"""
     flip_lr: bool
+    """left-right flip applied before rotate, for replay"""
     flip_ud: bool
+    """up-down flip applied before flip_lr, for replay"""
     contrast: list[float] | None
+    """(lo, hi) window used for uint8 display, if any"""
     slice_xy: list[list[float]]
+    """[N, 2] (x, y) points picked on the resized slice"""
     atlas_xy: list[list[float]]
+    """[N, 2] matched (x, y) points picked on the atlas plane"""
 
 
 def load_transform(path: Path) -> TransformMeta:
     """Read and parse a ``*_transform.json``."""
     return json.loads(Path(path).read_text())
-
-
-class TerminalLog:
-    """Append-only rich-console view over a magicgui Label: ``status.value = msg`` appends a
-    timestamped, color-highlighted line (QLabel renders HTML) and scrolls like a terminal,
-    keeping the last ``maxlines`` messages. Level (hence color) is inferred from the message;
-    pass it explicitly with ``log.log(msg, 'error')`` when the heuristic isn't enough."""
-
-    # level -> (panel HTML hex, rich terminal style)
-    _COLORS = {'error': ('#ff6b6b', 'bold red'), 'warning': ('#f2c14e', 'yellow'),
-               'save': ('#8bd450', 'green'), 'io': ('#56b6c2', 'cyan'), 'info': ('#d0d0d0', '')}
-
-    def __init__(self, label, maxlines: int = 200, echo: bool = True):
-        self._label = label
-        self._lines: deque[str] = deque(maxlen=maxlines)
-        self._echo = echo  # also mirror each line to the terminal (persistent, copyable log)
-
-    @staticmethod
-    def _infer(msg: str) -> str:
-        m = msg.lower()
-        if any(k in m for k in ('fail', 'error', 'cannot', "n't", 'invalid')):
-            return 'error'
-        if any(k in m for k in ('missing', 'cancel', 'no points', 'nothing', 'not ', 'stale')):
-            return 'warning'
-        if any(k in m for k in ('saved', 'save', '->', 'wrote', 'written')):
-            return 'save'
-        if any(k in m for k in ('load', 'render', 'resum', 'projected')):
-            return 'io'
-        return 'info'
-
-    def log(self, msg: str, level: str | None = None):
-        import html
-        from datetime import datetime
-        msg = str(msg)
-        hexc, style = self._COLORS.get(level or self._infer(msg), self._COLORS['info'])
-        ts = datetime.now().strftime('%H:%M:%S')
-        self._lines.append(
-            f'<span style="color:#6b7280">{ts}</span> '
-            f'<span style="color:{hexc}">{html.escape(msg)}</span>')
-        self._label.value = '<br>'.join(self._lines)
-        if self._echo:  # mirror to terminal via rich (auto-strips color when piped)
-            from rich.text import Text
-            line = Text()
-            line.append(ts + ' ', style='dim')
-            line.append(msg, style=style)  # append is literal — no markup injection from msg
-            _console().print(line)
-
-    @property
-    def value(self) -> str:
-        return '\n'.join(self._lines)
-
-    @value.setter
-    def value(self, msg: str):
-        self.log(msg)
 
 
 # --- image preprocessing ---------------------------------------------------
@@ -189,9 +137,12 @@ def estimate_transform(slice_xy: np.ndarray, atlas_xy: np.ndarray, *, affine: bo
             raise ValueError('affine transform needs >=3 matched point pairs')
         m, _ = cv2.estimateAffine2D(slice_xy, atlas_xy)
         return np.vstack([m, [0, 0, 1]]).astype(np.float64)
+
     if len(slice_xy) < 4:
         raise ValueError('projective transform needs >=4 matched point pairs')
+
     m, _ = cv2.findHomography(slice_xy, atlas_xy)
+
     return m.astype(np.float64)
 
 
@@ -228,6 +179,11 @@ def save_transform(matrix: np.ndarray, *,
     return js
 
 
+def apply_transformation(img: np.ndarray, m: np.ndarray) -> np.ndarray:
+    h, w = img.shape[:2]
+    return cv2.warpPerspective(img, m, (w, h))
+
+
 # --- probe reconstruction --------------------------------------------------
 
 def plane_point_to_ccf_mm(
@@ -259,8 +215,13 @@ def plane_point_to_ccf_mm(
 
 def raw_points_to_atlas(
         pts_xy: np.ndarray, *,
-        matrix: np.ndarray, raw_shape: tuple[int, int], plane: PLANE_TYPE,
-        rotate_deg: float = 0.0, flip_lr: bool = False, flip_ud: bool = False) -> np.ndarray:
+        matrix: np.ndarray,
+        raw_shape: tuple[int, int],
+        plane: PLANE_TYPE,
+        rotate_deg: float = 0.0,
+        flip_lr: bool = False,
+        flip_ud: bool = False
+) -> np.ndarray:
     """Forward-map raw-image ``(x, y)`` pixels into atlas-plane ``(x, y)`` pixels.
 
     Replays register's preprocessing pipeline (read -> flip -> rotate -> resize-to-dim ->

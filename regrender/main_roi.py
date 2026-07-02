@@ -21,9 +21,9 @@ from neuralib.atlas.ccf.matrix import slice_transform_helper
 from neuralib.atlas.util import ALLEN_CCF_10um_BREGMA
 from neuralib.util.verbose import fprint
 
-from regrender.core import (boundary_mask, load_transform, plane_point_to_ccf_mm, raw_points_to_atlas,
+from regrender._core import (boundary_mask, load_transform, plane_point_to_ccf_mm, raw_points_to_atlas,
                         read_oriented, region_name, rotate)
-from regrender.slice_app import RegionPicker, SliceReconstructOptions
+from regrender._app import RegionPicker, SliceReconstructOptions
 
 __all__ = ['RoiOptions', 'project_raw_rois']
 

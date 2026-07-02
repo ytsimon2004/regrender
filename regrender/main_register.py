@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 import cv2
 import imageio.v3 as iio
@@ -12,16 +13,13 @@ from neuralib.atlas.typing import PLANE_TYPE
 from neuralib.atlas.view import get_slice_view
 from neuralib.util.verbose import fprint
 
-from regrender.core import (TerminalLog, boundary_mask, estimate_transform, load_transform, read_oriented,
-                        region_name, rotate, save_transform, to_uint8)
+from regrender._app import TerminalLog
+from regrender._core import (
+    boundary_mask, estimate_transform, load_transform, read_oriented,
+    region_name, rotate, save_transform, to_uint8, apply_transformation
+)
 
 __all__ = ['RegisterOptions']
-
-
-def apply_transformation(img: np.ndarray, m: np.ndarray) -> np.ndarray:
-    # ponytail: inlined from the archived neuralib.imglib to avoid depending on neuralib-imaging
-    h, w = img.shape[:2]
-    return cv2.warpPerspective(img, m, (w, h))
 
 
 class RegisterOptions(AbstractParser):
@@ -48,27 +46,34 @@ class RegisterOptions(AbstractParser):
     )
 
     name: str | None = argument('--name', default=None, help='output name (default: image stem)')
-
     flip_lr: bool = argument('--flip-lr', help='flip histology left-right before registration')
     flip_ud: bool = argument('--flip-ud', help='flip histology up-down before registration')
     affine: bool = argument('--affine', help='use affine instead of projective transform')
+
     boundary_color: str = argument(
         '--boundary-color',
         default='orange',
         help='annotation boundary overlay color (matplotlib name or #hex)'
     )
+
     load: Path | None = argument(
         '--load',
         default=None,
         help='resume from a saved *_transform.json (restores points + index/dw/dh/rotate/flips)'
     )
+
     directory: Path | None = argument(
         '-D', '--directory',
         default=None,
         help='folder of serial sections; step through them with Prev/Next in the GUI'
     )
 
+    #
+    AXIS = {'coronal': ('ML', 'DV'), 'sagittal': ('AP', 'DV')}
     _IMG_EXT = {'.tif', '.tiff', '.png', '.jpg', '.jpeg'}
+
+    def __init__(self):
+        self._oriented = None
 
     def _list_images(self, d: Path) -> list[Path]:
         return sorted(p for p in Path(d).iterdir() if p.suffix.lower() in self._IMG_EXT)
@@ -79,6 +84,7 @@ class RegisterOptions(AbstractParser):
                              f'(available: {list(SLICE_DIMENSION_10um)})')
 
         load = load_transform(self.load) if self.load else None
+
         if load:  # resume: preprocessing must match the saved session
             self.flip_lr = load.get('flip_lr', self.flip_lr)
             self.flip_ud = load.get('flip_ud', self.flip_ud)
@@ -103,13 +109,12 @@ class RegisterOptions(AbstractParser):
         """read an image with the current flips (pre-rotate, pre-resize), or None"""
         return None if path is None else read_oriented(path, self.flip_lr, self.flip_ud)
 
-    # (width, height) anatomical axes per plane, for tilt labels
-    AXIS = {'coronal': ('ML', 'DV'), 'sagittal': ('AP', 'DV')}
-
     def _launch_napari(self, ref_view, atlas_w: int, out_dir: Path, name: str,
                        load: dict | None = None, files: list[Path] | None = None):
         import napari
         from magicgui.widgets import CheckBox, ComboBox, Container, Label, PushButton, SpinBox
+        from matplotlib.colors import to_rgb
+        from napari.utils import Colormap
 
         load = load or {}
         dim = SLICE_DIMENSION_10um[self.cut_plane]
@@ -139,13 +144,13 @@ class RegisterOptions(AbstractParser):
             state['ref_mm'] = ref_plane.reference_value
             return ref_plane.image
 
-        def pts_kw(color):
-            return dict(face_color=color, border_color=color, symbol='cross', size=20, ndim=2,
-                        features={'n': np.empty(0, dtype='<U3')},
-                        text={'string': '{n}', 'color': color, 'size': 12, 'translation': [-12, 0]})
+        def pts_kw(color) -> dict[str, Any]:
+            return dict(
+                face_color=color, border_color=color, symbol='cross', size=20, ndim=2,
+                features={'n': np.empty(0, dtype='<U3')},
+                text={'string': '{n}', 'color': color, 'size': 12, 'translation': [-12, 0]}
+            )
 
-        from matplotlib.colors import to_rgb
-        from napari.utils import Colormap
         brgb = to_rgb(self.boundary_color)  # (r, g, b) in 0..1
         state['brgb'] = brgb
         bcmap = Colormap([[0, 0, 0], list(brgb)], name='boundary')  # 0 -> transparent (additive), 1 -> color
@@ -167,13 +172,16 @@ class RegisterOptions(AbstractParser):
 
         # reference xy grid over the histology (toggled off), 100 px spacing. drawn as an
         # image on the pixel grid (nearest) so it scales with the slice and is zoom-stable
-        gw, gh = dim
         step = 100
-        grid_img = np.zeros((gh, gw), dtype=float)
-        grid_img[::step, :] = 1
-        grid_img[:, ::step] = 1
-        grid_img[-1, :] = grid_img[:, -1] = 1
-        grid_layer = viewer.add_image(grid_img, name='xy_grid', translate=(0, atlas_w),
+
+        def make_grid(w: int, h: int) -> np.ndarray:
+            g = np.zeros((h, w), dtype=float)
+            g[::step, :] = 1
+            g[:, ::step] = 1
+            g[-1, :] = g[:, -1] = 1
+            return g
+
+        grid_layer = viewer.add_image(make_grid(*dim), name='xy_grid', translate=(0, atlas_w),
                                       colormap='gray', blending='additive', opacity=0.5,
                                       interpolation2d='nearest')
         grid_layer.visible = False
@@ -458,12 +466,7 @@ class RegisterOptions(AbstractParser):
             state['hist'] = make_hist(rot_w.value)
             set_histology(state['hist'])
 
-            gw, gh = dim  # rebuild the grid for the new dimensions/placement
-            g = np.zeros((gh, gw), dtype=float)
-            g[::step, :] = 1
-            g[:, ::step] = 1
-            g[-1, :] = g[:, -1] = 1
-            grid_layer.data = g
+            grid_layer.data = make_grid(*dim)  # rebuild the grid for the new dimensions/placement
             grid_layer.translate = (0, atlas_w)
 
             on_clear()
