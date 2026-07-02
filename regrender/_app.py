@@ -282,6 +282,16 @@ class SliceReconstructOptions(AbstractParser):
         lbl.native.setStyleSheet('font-weight: bold; color: #88c0d0; padding-top: 6px;')
         return lbl
 
+    _CH = {'R': 0, 'G': 1, 'B': 2}
+
+    @classmethod
+    def channel_view(cls, img, channel: str):
+        # show one RGB channel as grayscale (easier to see labels); pixel coords are unchanged
+        if channel == 'merge' or getattr(img, 'ndim', 0) != 3:
+            return img
+        idx = cls._CH.get(channel, 0)
+        return img[..., idx] if idx < img.shape[2] else img
+
     @staticmethod
     def srow(*ws):
         from magicgui.widgets import Container

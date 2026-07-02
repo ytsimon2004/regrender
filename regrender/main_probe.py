@@ -112,9 +112,11 @@ class ProbeOptions(SliceReconstructOptions):
         def set_histology(img: np.ndarray):
             # napari can't flip grayscale<->RGB in place; re-create it (reorder() puts it at bottom)
             nonlocal warped_layer
+            state['warped'] = img  # keep the full image so the channel selector can re-slice it
             if warped_layer is not None and warped_layer in viewer.layers:
                 viewer.layers.remove(warped_layer)
-            warped_layer = viewer.add_image(img, name='histology', colormap='gray')
+            view = self.channel_view(img, channel_w.value)
+            warped_layer = viewer.add_image(view, name='histology', colormap='gray')
 
         def reorder():
             # bottom -> top: histology, hover highlight, atlas boundaries, click points
@@ -250,6 +252,14 @@ class ProbeOptions(SliceReconstructOptions):
 
         shank_w = SpinBox(label='shank', value=1, min=1, max=64)
         mark_w = ComboBox(label='marking', choices=list(MARKS), value=MARKS[0])
+        channel_w = ComboBox(label='channel', choices=['merge', 'R', 'G', 'B'], value='merge')
+
+        def on_channel(*_):
+            if state.get('warped') is not None:
+                set_histology(state['warped'])  # re-slice current image; nothing else changes
+                reorder()
+
+        channel_w.changed.connect(on_channel)
 
         regions = RegionPicker(bg.structures)
         style_w = ComboBox(label='style', choices=SHADER_STYLES, value=SHADER_STYLES[0])
@@ -371,7 +381,7 @@ class ProbeOptions(SliceReconstructOptions):
 
         panel = Container(widgets=[
             self.header('Slice'), slice_lbl, self.srow(prev_btn, next_btn),
-            self.header('Dye point'), shank_w, mark_w, probe_color_w,
+            self.header('Dye point'), shank_w, mark_w, channel_w, probe_color_w,
             self.header('Accumulated'), summary, invert_btn,
             self.header('Regions'), *regions.widgets,
             self.header('Render'), self.srow(style_w, hemisphere_w), no_root_w, render_btn,

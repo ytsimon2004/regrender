@@ -268,21 +268,11 @@ class RoiOptions(SliceReconstructOptions):
             return [r for r in state['rois'].values() if r['slice'] == state['name']
                     and (channel is None or r.get('channel', 'merge') == channel)]
 
-        _CH = {'R': 0, 'G': 1, 'B': 2}
-
-        def channel_view(img):
-            # show one channel as grayscale (easier to see cells in a merge); coords are unchanged
-            c = channel_w.value
-            if c == 'merge' or img.ndim != 3:
-                return img
-            idx = _CH.get(c, 0)
-            return img[..., idx] if idx < img.shape[2] else img
-
         def display_raw():
             # annotation view: native raw image, click to add ROIs in the active channel's set
             ch = channel_w.value
             state['ann_img'] = None
-            set_raw(channel_view(state['raw_img']))
+            set_raw(self.channel_view(state['raw_img'], ch))
             highlight_layer.visible = bound_layer.visible = False
             rois = _slice_rois(ch)
             color = _CH_COLOR.get(ch, 'cyan')
