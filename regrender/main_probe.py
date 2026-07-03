@@ -95,7 +95,8 @@ class ProbeOptions(SliceReconstructOptions):
         # pts[(shank, 'dorsal'|'ventral')] = (AP, DV, ML) bregma-relative mm; crosses re-derived per slice
         # src[(shank, 'dorsal'|'ventral')] = source slice stem the point was picked on
         state: dict = {'pts': {}, 'src': {}, 'files': files, 'cursor': 0, 'plane': None,
-                       'view': None, 'plane_off': None, 'name': None, 'ann_img': None, 'hover_id': None}
+                       'view': None, 'plane_off': None, 'name': None, 'ann_img': None, 'hover_id': None,
+                       'mode': 'single', 'tiles': [], 'grid': None, 'warped': None}
 
         warped_layer = None  # created on first load (re-created to switch grayscale<->RGB safely)
         bound_layer = viewer.add_image(np.zeros((10, 10)), name='boundaries',
@@ -109,14 +110,16 @@ class ProbeOptions(SliceReconstructOptions):
                                         text={'string': '{label}', 'color': 'cyan', 'size': 12,
                                               'translation': [-14, 0]})
 
-        def set_histology(img: np.ndarray):
+        def _set_hist_layer(display: np.ndarray):
             # napari can't flip grayscale<->RGB in place; re-create it (reorder() puts it at bottom)
             nonlocal warped_layer
-            state['warped'] = img  # keep the full image so the channel selector can re-slice it
             if warped_layer is not None and warped_layer in viewer.layers:
                 viewer.layers.remove(warped_layer)
-            view = self.channel_view(img, channel_w.value)
-            warped_layer = viewer.add_image(view, name='histology', colormap='gray')
+            warped_layer = viewer.add_image(display, name='histology', colormap='gray')
+
+        def set_histology(img: np.ndarray):
+            state['warped'] = img  # keep the full image so the channel selector can re-slice it
+            _set_hist_layer(self.channel_view(img, channel_w.value))
 
         def reorder():
             # bottom -> top: histology, hover highlight, atlas boundaries, click points
@@ -134,17 +137,25 @@ class ProbeOptions(SliceReconstructOptions):
 
         get_views = self.make_view_cache()
 
+        def frames() -> list[dict]:
+            # tiles to reconstruct crosses onto: N in all-slices view, 1 (origin 0,0) in single view
+            if state['mode'] == 'all':
+                return state['tiles']
+            if state['view'] is None:
+                return []
+            return [{'view': state['view'], 'plane_off': state['plane_off'], 'origin': (0, 0)}]
+
         def redraw_crosses():
-            # reconstruct each point's pixel from its CCF coord; show it if it lands on this slice
-            view, off = state['view'], state['plane_off']
+            # reconstruct each point's pixel from its CCF coord; show it on every frame it lands on
             here, labels, keys = [], [], []
-            if view is not None and off is not None:
+            for fr in frames():
+                view, off, (oy, ox) = fr['view'], fr['plane_off'], fr['origin']
                 for (shank, point), ccf in state['pts'].items():
                     plane, x, y = ccf_mm_to_plane_point(ccf, project_index=view.project_index,
                                                         resolution=view.resolution)
                     xi, yi = int(round(x)), int(round(y))
                     if 0 <= yi < off.shape[0] and 0 <= xi < off.shape[1] and abs(off[yi, xi] - plane) <= 1:
-                        here.append([y, x])
+                        here.append([oy + y, ox + x])
                         labels.append(f'{shank} ({point[0]})')  # e.g. "0 (d)" / "0 (v)"
                         keys.append((shank, point))
             state['cross_here'], state['cross_keys'] = here, keys  # parallel to displayed points
@@ -169,28 +180,34 @@ class ProbeOptions(SliceReconstructOptions):
             redraw_crosses()
             status.value = f'removed {len(removed)} point(s)'
 
-        def load_slice(img: Path):
+        def compute_slice(img: Path) -> dict | None:
+            # warp one registered slice to atlas space; None if it has no saved registration
             tp = self._transform_path(img)
             if not tp.exists():
-                status.value = f'no registration for {img.name} — skip or register it first'
-                return
-
+                return None
             meta = load_transform(tp)
             plane, res = meta['plane'], int(meta['resolution'])
             idx, dw, dh = int(meta['slice_index']), int(meta['dw']), int(meta['dh'])
             oimg = rotate(read_oriented(img, meta.get('flip_lr', False), meta.get('flip_ud', False)),
                           float(meta.get('rotate', 0.0)))
             _, trans = slice_transform_helper(oimg, np.array(meta['matrix'], float), plane_type=plane)
-
             od = lambda v: v + 1 if v != 0 else 0
             view, ann = get_views(plane, res)  # cached: avoids reloading atlas volumes per slice
             sp = view.plane_at(idx).with_offset(od(dw), od(dh))
             ann_sp = ann.plane_at(idx).with_offset(od(dw), od(dh))
+            return {'trans': trans, 'view': view, 'plane_off': sp.plane_offset,
+                    'ann_img': ann_sp.image, 'plane': plane}
 
-            ann_img = ann_sp.image
-            state.update(plane=plane, view=view, plane_off=sp.plane_offset, name=img.stem,
+        def load_slice(img: Path):
+            r = compute_slice(img)
+            if r is None:
+                status.value = f'no registration for {img.name} — skip or register it first'
+                return
+            view, ann_img = r['view'], r['ann_img']
+            state.update(plane=r['plane'], view=view, plane_off=r['plane_off'], name=img.stem,
                          ann_img=ann_img, hover_id=None)
-            set_histology(trans)
+            set_histology(r['trans'])
+            bound_layer.visible = highlight_layer.visible = True  # may have been hidden by all-view
             bound_layer.data = boundary_mask(ann_img)
             highlight_layer.data = np.zeros(ann_img.shape, dtype=float)  # stale on plane change
             redraw_crosses()  # restore crosses picked on this slice (e.g. after CSV reload)
@@ -223,6 +240,17 @@ class ProbeOptions(SliceReconstructOptions):
         summary.native.linkActivated.connect(on_table_link)
         click_layer.events.data.connect(on_crosses_edited)
 
+        def frame_at(y: float, x: float) -> dict | None:
+            # which slice was clicked: the single frame, or the mosaic tile under (y, x)
+            if state['mode'] == 'all':
+                if not state['tiles']:
+                    return None
+                h, w, cols = state['grid']
+                row, col = int(y) // h, int(x) // w
+                idx = row * cols + col
+                return state['tiles'][idx] if 0 <= col < cols and 0 <= idx < len(state['tiles']) else None
+            return frames()[0] if frames() else None
+
         @viewer.mouse_drag_callbacks.append
         def on_click(_v, event):
             dragged = False
@@ -230,19 +258,23 @@ class ProbeOptions(SliceReconstructOptions):
             while event.type == 'mouse_move':
                 dragged = True
                 yield
-            if dragged or state['view'] is None:
+            if dragged:
                 return
             y, x = event.position
-            off = state['plane_off']
-            if not (0 <= y < off.shape[0] and 0 <= x < off.shape[1]):
+            fr = frame_at(y, x)
+            if fr is None:
                 return
-            ccf = plane_point_to_ccf_mm(off[int(y), int(x)], x, y,
-                                        project_index=state['view'].project_index,
-                                        resolution=state['view'].resolution,
+            view, off, (oy, ox) = fr['view'], fr['plane_off'], fr['origin']
+            ly, lx = y - oy, x - ox  # pixel within this slice
+            if not (0 <= ly < off.shape[0] and 0 <= lx < off.shape[1]):
+                return
+            ccf = plane_point_to_ccf_mm(off[int(ly), int(lx)], lx, ly,
+                                        project_index=view.project_index,
+                                        resolution=view.resolution,
                                         bregma_10um=tuple(ALLEN_CCF_10um_BREGMA))
             key = (int(shank_w.value), _POINT[mark_w.value])
             state['pts'][key] = ccf
-            state['src'][key] = state['name']  # slice this point was picked on
+            state['src'][key] = fr.get('name', state['name'])  # slice this point was picked on
             redraw_crosses()
             status.value = (f'shank {shank_w.value} {mark_w.value} -> '
                             f'AP {ccf[0]:.2f}, DV {ccf[1]:.2f}, ML {ccf[2]:.2f} mm')
@@ -255,8 +287,10 @@ class ProbeOptions(SliceReconstructOptions):
         channel_w = ComboBox(label='channel', choices=['merge', 'R', 'G', 'B'], value='merge')
 
         def on_channel(*_):
-            if state.get('warped') is not None:
-                set_histology(state['warped'])  # re-slice current image; nothing else changes
+            if state['mode'] == 'all':
+                show_all()  # rebuild the mosaic in the new channel
+            elif state.get('warped') is not None:
+                set_histology(state['warped'])  # re-slice current image; keep camera
                 reorder()
 
         channel_w.changed.connect(on_channel)
@@ -350,6 +384,48 @@ class ProbeOptions(SliceReconstructOptions):
             redraw_crosses()
             status.value = 'flipped ML -> other hemisphere'
 
+        def show_all():
+            # tile every registered slice into one canvas; store per-tile geometry for click mapping
+            files = state['files'] or ([self.raw_image] if self.raw_image else [])
+            items = [(f.stem, r) for f in files if (r := compute_slice(f)) is not None]
+            if not items:
+                status.value = 'no registered slices to show'
+                return
+            imgs = [self.channel_view(r['trans'], channel_w.value) for _, r in items]
+            tail = imgs[0].shape[2:]  # () for grayscale, (3,) / (4,) for RGB(A)
+            th = max(i.shape[0] for i in imgs)
+            tw = max(i.shape[1] for i in imgs)
+            cols = int(np.ceil(np.sqrt(len(imgs))))
+            rows = int(np.ceil(len(imgs) / cols))
+            big = np.zeros((rows * th, cols * tw) + tail, dtype=imgs[0].dtype)
+            bmask = np.zeros((rows * th, cols * tw), dtype=bool)  # atlas boundaries, tiled the same way
+            tiles = []
+            for i, ((name, r), im) in enumerate(zip(items, imgs)):
+                oy, ox = (i // cols) * th, (i % cols) * tw
+                big[oy:oy + im.shape[0], ox:ox + im.shape[1]] = im
+                b = boundary_mask(r['ann_img'])
+                bmask[oy:oy + b.shape[0], ox:ox + b.shape[1]] = b
+                tiles.append({'view': r['view'], 'plane_off': r['plane_off'],
+                              'origin': (oy, ox), 'name': name})
+            state.update(tiles=tiles, grid=(th, tw, cols), view=None, plane_off=None, ann_img=None)
+            _set_hist_layer(big)
+            bound_layer.data = bmask
+            bound_layer.visible = True
+            highlight_layer.visible = False  # pick-only: static boundaries, but no hover highlight
+            redraw_crosses()
+            reorder()
+            viewer.reset_view()
+            slice_lbl.value = f'all slices ({len(tiles)})'
+            status.value = f'all-slices view: click any slice to mark {mark_w.value} of shank {shank_w.value}'
+
+        def refresh_view():
+            if state['mode'] == 'all':
+                show_all()
+            elif state['files']:
+                load_slice(state['files'][state['cursor']])
+            elif self.raw_image:
+                load_slice(self.raw_image)
+
         def step(delta: int):
             files = state['files']
             if not files:
@@ -362,6 +438,15 @@ class ProbeOptions(SliceReconstructOptions):
         prev_btn.changed.connect(lambda *_: step(-1))
         next_btn = PushButton(text='Next slice ▶')
         next_btn.changed.connect(lambda *_: step(+1))
+        view_w = ComboBox(label='view', choices=['single', 'all'], value='single')
+
+        def on_mode(*_):
+            state['mode'] = view_w.value
+            single = view_w.value == 'single'
+            prev_btn.enabled = next_btn.enabled = single  # stepping only makes sense in single view
+            refresh_view()
+
+        view_w.changed.connect(on_mode)
 
         def on_load_csv():
             from qtpy.QtWidgets import QFileDialog
@@ -380,7 +465,7 @@ class ProbeOptions(SliceReconstructOptions):
         render_btn.changed.connect(lambda *_: on_render())
 
         panel = Container(widgets=[
-            self.header('Slice'), slice_lbl, self.srow(prev_btn, next_btn),
+            self.header('Slice'), slice_lbl, view_w, self.srow(prev_btn, next_btn),
             self.header('Dye point'), shank_w, mark_w, channel_w, probe_color_w,
             self.header('Accumulated'), summary, invert_btn,
             self.header('Regions'), *regions.widgets,
