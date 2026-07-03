@@ -13,6 +13,21 @@ reconstructing probe tracks, and rendering the results with brainrender.
 - **Probe-track reconstruction** (`regrender probe`) — reconstruct electrode shanks from dye labels across serial sections.
 - **brainrender rendering** of ROIs and probes in 3D atlas space.
 
+## Demo
+
+**`regrender register`** — match landmark pairs between the atlas plane (left) and histology (right):
+
+<img src="docs/source/_static/register.png" alt="register" width="800">
+
+**`regrender roi`** — label cells per channel, then project + render in 3D with brainrender:
+
+<img src="docs/source/_static/roi.png" alt="roi" width="800">
+
+**`regrender probe`** — pick dye points per shank and reconstruct the tracks in 3D:
+
+<img src="docs/source/_static/probe.png" alt="probe" width="800">
+
+
 ## Quick Start
 
 ```bash

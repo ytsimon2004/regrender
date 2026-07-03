@@ -4,6 +4,12 @@ Probe-Track Reconstruction (``regrender probe``)
 Reconstruct electrode/probe shanks from dye labels on registered slices, then render them in
 3D with brainrender. Requires the slices to be registered first (``regrender register``).
 
+.. figure:: /_static/probe.png
+   :alt: regrender probe GUI
+   :width: 100%
+
+   Dye points picked per shank on registered slices (top), reconstructed shanks rendered in 3D (left).
+
 .. code-block:: bash
 
     regrender probe -D <slices_dir>

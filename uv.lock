@@ -3459,7 +3459,7 @@ dependencies = [
     { name = "imageio" },
     { name = "napari", extra = ["pyqt5"] },
     { name = "neuralib-atlas", extra = ["brainrender"] },
-    { name = "numba" },
+    { name = "rich" },
 ]
 
 [package.optional-dependencies]
@@ -3478,9 +3478,9 @@ requires-dist = [
     { name = "imageio" },
     { name = "napari", extras = ["pyqt5"] },
     { name = "neuralib-atlas", extras = ["brainrender"], specifier = ">=0.7.3" },
-    { name = "numba", specifier = ">=0.60" },
     { name = "pydata-sphinx-theme", marker = "extra == 'doc'" },
     { name = "pytest", marker = "extra == 'test'" },
+    { name = "rich" },
     { name = "sphinx", marker = "extra == 'doc'" },
     { name = "sphinx-copybutton", marker = "extra == 'doc'" },
 ]

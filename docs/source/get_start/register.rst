@@ -4,6 +4,12 @@ Slice Registration (``regrender register``)
 Interactively register a histology slice to the Allen CCF in napari by matching landmark
 point pairs between the atlas and your slice.
 
+.. figure:: /_static/register.png
+   :alt: regrender register GUI
+   :width: 100%
+
+   Atlas plane (left) and histology (right) with matched landmark pairs.
+
 .. code-block:: bash
 
     # single image

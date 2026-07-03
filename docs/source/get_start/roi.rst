@@ -6,6 +6,12 @@ brainrender. The workflow order is **roi → register → project**: ROIs are ma
 full-resolution raw image (in raw pixel coordinates, no registration needed yet), and the
 saved registration transform is applied later to project them into the atlas.
 
+.. figure:: /_static/roi.png
+   :alt: regrender roi GUI
+   :width: 100%
+
+   Labeling cells per channel (right), with projected ROIs rendered in 3D via brainrender (left).
+
 Labeling
 --------
 
