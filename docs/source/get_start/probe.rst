@@ -28,8 +28,13 @@ Each slice's ``*_transform.json`` is loaded and the histology is re-warped into 
    - dye-only by default, or
    - with a theoretical track when ``--depth`` (and optionally ``--interval``) is set.
 
-Picked points are saved to ``probe_shanks.csv`` (``AP_location``, ``DV_location``,
-``ML_location``, ``probe_idx``, ``point``).
+Picked points are saved to ``probe_shanks.csv`` (``ap_mm``, ``dv_mm``, ``ml_mm``,
+``probe_idx``, ``point``, ``source``).
+
+The **Region profile plot** button samples each shank dorsal→ventral and shows which Allen
+region every depth band falls in (colored by the atlas), with a euclidean-mm ruler from the
+surface; with ``--depth`` set it extrapolates the dye line to that depth. It writes
+``probe_region_profile.pdf`` and ``probe_region_profile.csv``.
 
 Options
 -------

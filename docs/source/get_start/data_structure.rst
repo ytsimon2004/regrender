@@ -76,9 +76,15 @@ Probe CSV — ``probe_shanks.csv``
 
 From ``regrender probe``:
 
-- ``AP_location``, ``DV_location``, ``ML_location`` — CCF coordinates (mm)
+- ``ap_mm``, ``dv_mm``, ``ml_mm`` — bregma-relative CCF coordinates (mm)
 - ``probe_idx`` — shank index
 - ``point`` — ``dorsal`` (superficial) or ``ventral`` (deep)
+- ``source`` — source slice stem the point was picked on
+
+The **Region profile plot** button also writes ``probe_region_profile.pdf`` and
+``probe_region_profile.csv`` (one row per region span per shank: ``shank``, ``region``,
+``extrapolated``, ``dv_start_mm``, ``dv_end_mm``, ``depth_start_mm``, ``depth_end_mm``,
+``length_mm``).
 
 .. note::
 

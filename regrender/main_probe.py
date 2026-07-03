@@ -405,20 +405,22 @@ class ProbeOptions(SliceReconstructOptions):
                 _draw_ruler(y0, x0, y1, x1)
                 yield
 
-        _CSV_COLS = {'AP_location', 'DV_location', 'ML_location', 'probe_idx', 'point'}
-
         def load_csv_points(path: Path):
             try:
                 df = pl.read_csv(path)
             except Exception as e:  # noqa: BLE001 - surface any read error in the GUI
                 status.value = f'could not read {path.name}: {e}'
                 return
-            if not _CSV_COLS <= set(df.columns):
-                status.value = f'{path.name}: not a probe CSV (needs {", ".join(sorted(_CSV_COLS))})'
+            cols = set(df.columns)
+            # accept the new (ap_mm/…) or legacy (AP_location/…) column names
+            ap_c, dv_c, ml_c = (('ap_mm', 'dv_mm', 'ml_mm') if 'ap_mm' in cols
+                                else ('AP_location', 'DV_location', 'ML_location'))
+            if not {ap_c, dv_c, ml_c, 'probe_idx', 'point'} <= cols:
+                status.value = f'{path.name}: not a probe CSV (needs ap_mm/dv_mm/ml_mm, probe_idx, point)'
                 return
             for r in df.iter_rows(named=True):
                 key = (int(r['probe_idx']), r['point'])
-                state['pts'][key] = (r['AP_location'], r['DV_location'], r['ML_location'])
+                state['pts'][key] = (r[ap_c], r[dv_c], r[ml_c])
                 state['src'][key] = r.get('source', '') or ''  # column optional on older CSVs
             refresh_summary()
             redraw_crosses()  # crosses are reconstructed from the loaded coordinates
@@ -433,7 +435,7 @@ class ProbeOptions(SliceReconstructOptions):
                         status.value = f'shank {s} missing its {point} point'
                         return None
                     ap, dv, ml = state['pts'][(s, point)]
-                    rows.append({'AP_location': ap, 'DV_location': dv, 'ML_location': ml,
+                    rows.append({'ap_mm': ap, 'dv_mm': dv, 'ml_mm': ml,
                                  'probe_idx': s, 'point': point,
                                  'source': state['src'].get((s, point), '')})
             if not rows:
@@ -456,7 +458,9 @@ class ProbeOptions(SliceReconstructOptions):
                 return
             import tempfile
             csv = Path(tempfile.gettempdir()) / 'regrender_probe_render.csv'
-            pl.DataFrame(rows).write_csv(csv)
+            # ProbeRenderCLI expects the neuralib column names
+            pl.DataFrame(rows).rename({'ap_mm': 'AP_location', 'dv_mm': 'DV_location',
+                                       'ml_mm': 'ML_location'}).write_csv(csv)
             shanks = sorted({s for s, _ in state['pts']})  # same order as the saved CSV rows
             cmd = _render_command(csv, state['plane'] or 'coronal', shanks, shank_colors,
                                   regions.colors, self.depth, self.interval, style_w.value,
@@ -499,8 +503,10 @@ class ProbeOptions(SliceReconstructOptions):
                     j = i
                     while j < n and acrs[j] == acrs[i]:
                         j += 1
-                    dv_end = dvs[j] if j < n else dvs[-1]  # abut the next band (no gaps)
-                    runs.append((dvs[i], dv_end, acrs[i], ts[i] > 1.0))  # flag extrapolated part
+                    k = j if j < n else n - 1  # boundary sample (abut next band, no gaps)
+                    # (dv0, dv1, acronym, extrapolated, euclid0, euclid1) — euclid = mm from dorsal
+                    runs.append((dvs[i], dvs[k], acrs[i], ts[i] > 1.0,
+                                 length * ts[i], length * ts[k]))
                     i = j
                 tracks.append((s, runs, d, v, length))
             if not tracks:
@@ -517,7 +523,7 @@ class ProbeOptions(SliceReconstructOptions):
             import matplotlib.pyplot as plt
             fig, ax = plt.subplots(figsize=(1.9 * len(tracks) + 1, 6))
             for xi, (s, runs, d, v, length) in enumerate(tracks):
-                for dv0, dv1, a, extrap in runs:
+                for dv0, dv1, a, extrap, _e0, _e1 in runs:
                     lo, hi = min(dv0, dv1), max(dv0, dv1)
                     ax.bar(xi, hi - lo, bottom=lo, width=0.8, color=acr_color(a),
                            edgecolor='white', linewidth=0.5,
@@ -541,9 +547,17 @@ class ProbeOptions(SliceReconstructOptions):
             ax.margins(x=0.15)
             fig.tight_layout()
             self._out.parent.mkdir(parents=True, exist_ok=True)
-            out = self._out.parent / 'probe_region_profile.png'
-            fig.savefig(out, dpi=150)
-            status.value = f'region profile -> {out}'
+            out = self._out.parent / 'probe_region_profile.pdf'
+            fig.savefig(out)  # vector figure
+            # export the band data (one row per region span per shank)
+            csv_rows = [{'shank': s, 'region': a, 'extrapolated': extrap,
+                         'dv_start_mm': round(dv0, 4), 'dv_end_mm': round(dv1, 4),
+                         'depth_start_mm': round(e0, 4), 'depth_end_mm': round(e1, 4),
+                         'length_mm': round(abs(e1 - e0), 4)}
+                        for s, runs, *_ in tracks for dv0, dv1, a, extrap, e0, e1 in runs]
+            csv = self._out.parent / 'probe_region_profile.csv'
+            pl.DataFrame(csv_rows).write_csv(csv)
+            status.value = f'region profile -> {out.name} + {csv.name}'
             plt.show(block=False)
 
         def invert_ml():
