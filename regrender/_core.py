@@ -213,6 +213,23 @@ def plane_point_to_ccf_mm(
     return (bap - ap) / 1000, (dv - bdv) / 1000, (bml - ml) / 1000
 
 
+def ccf_mm_to_voxel(
+        ccf: tuple[float, float, float], *,
+        resolution: int = 10,
+        bregma_10um: tuple[int, int, int] = (540, 0, 570),
+) -> tuple[float, float, float]:
+    """Bregma-relative CCF ``(AP, DV, ML)`` mm -> absolute atlas voxel ``(AP, DV, ML)``.
+
+    Same index math as :func:`ccf_mm_to_plane_point` but without the ``project_index`` reorder,
+    so it feeds ``BrainGlobeAtlas.structure_from_coords`` directly (allen space ``ap, si, rl``).
+    """
+    ap_mm, dv_mm, ml_mm = ccf
+    bap, bdv, bml = (b * 10 for b in bregma_10um)  # 10µm voxel -> µm
+    return ((bap - ap_mm * 1000) / resolution,
+            (dv_mm * 1000 + bdv) / resolution,
+            (bml - ml_mm * 1000) / resolution)
+
+
 def raw_points_to_atlas(
         pts_xy: np.ndarray, *,
         matrix: np.ndarray,

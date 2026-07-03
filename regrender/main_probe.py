@@ -10,8 +10,8 @@ from neuralib.atlas.ccf.matrix import slice_transform_helper
 from neuralib.atlas.util import ALLEN_CCF_10um_BREGMA
 from neuralib.util.verbose import fprint
 
-from regrender._core import (boundary_mask, ccf_mm_to_plane_point, load_transform, plane_point_to_ccf_mm,
-                        read_oriented, rotate)
+from regrender._core import (boundary_mask, ccf_mm_to_plane_point, ccf_mm_to_voxel, load_transform,
+                        plane_point_to_ccf_mm, read_oriented, rotate)
 from regrender._app import RegionPicker, SliceReconstructOptions
 
 __all__ = ['ProbeOptions']
@@ -374,6 +374,68 @@ class ProbeOptions(SliceReconstructOptions):
                                + (f', {len(regions.colors)} region(s)' if regions.colors else '')
                                + ') in a separate window...')
 
+        def region_profile():
+            # for each shank, sample dorsal->ventral and show which region each depth band is in
+            shanks = sorted({s for s, _ in state['pts']})
+            tracks = []  # (shank, runs, dv_span); runs = [(dv0, dv1, acronym), ...] in mm
+            for s in shanks:
+                d, v = state['pts'].get((s, 'dorsal')), state['pts'].get((s, 'ventral'))
+                if d is None or v is None:
+                    status.value = f'shank {s} missing its dorsal/ventral point'
+                    return
+                d, v = np.array(d, float), np.array(v, float)
+                ts = np.linspace(0, 1, 256)
+                dvs = d[1] + (v[1] - d[1]) * ts  # DV (mm) at each sample, dorsal -> ventral
+                dv_span = abs(v[1] - d[1])
+                acrs = []
+                for t in ts:
+                    try:
+                        a = bg.structure_from_coords(ccf_mm_to_voxel(tuple(d + (v - d) * t)),
+                                                     microns=False, as_acronym=True)
+                    except Exception:  # noqa: BLE001 - outside the annotated volume
+                        a = 'out'
+                    acrs.append(a)
+                runs, i = [], 0
+                while i < len(ts):  # collapse consecutive samples of the same region into one band
+                    j = i
+                    while j < len(ts) and acrs[j] == acrs[i]:
+                        j += 1
+                    # extend to the next band's boundary (dvs[j]) so bands abut with no gaps
+                    dv_end = dvs[j] if j < len(ts) else dvs[-1]
+                    runs.append((dvs[i], dv_end, acrs[i]))
+                    i = j
+                tracks.append((s, runs, dv_span))
+            if not tracks:
+                status.value = 'no shanks to plot'
+                return
+
+            def acr_color(a: str):
+                try:
+                    r, g, b = bg.structures[a]['rgb_triplet']
+                    return r / 255, g / 255, b / 255
+                except KeyError:
+                    return 0.85, 0.85, 0.85  # 'out' / root / unknown
+
+            import matplotlib.pyplot as plt
+            fig, ax = plt.subplots(figsize=(1.6 * len(tracks) + 1, 6))
+            for xi, (s, runs, dv_span) in enumerate(tracks):
+                for dv0, dv1, a in runs:
+                    lo, hi = min(dv0, dv1), max(dv0, dv1)
+                    ax.bar(xi, hi - lo, bottom=lo, width=0.8, color=acr_color(a),
+                           edgecolor='white', linewidth=0.5)
+                    ax.text(xi, (lo + hi) / 2, a, ha='center', va='center', fontsize=7)
+            ax.set_xticks(range(len(tracks)))
+            ax.set_xticklabels([f'shank {s}' for s, _, _ in tracks])
+            ax.set_ylabel('DV from bregma (mm)')
+            ax.set_title('Probe region profile')
+            ax.invert_yaxis()  # dorsal (smaller DV) at top
+            fig.tight_layout()
+            self._out.parent.mkdir(parents=True, exist_ok=True)
+            out = self._out.parent / 'probe_region_profile.png'
+            fig.savefig(out, dpi=150)
+            status.value = f'region profile -> {out}'
+            plt.show(block=False)
+
         def invert_ml():
             if not state['pts']:
                 status.value = 'no points to flip'
@@ -463,12 +525,14 @@ class ProbeOptions(SliceReconstructOptions):
         save_btn.changed.connect(lambda *_: save_csv())
         render_btn = PushButton(text='Render (brainrender)')
         render_btn.changed.connect(lambda *_: on_render())
+        profile_btn = PushButton(text='Region profile plot')
+        profile_btn.changed.connect(lambda *_: region_profile())
 
         panel = Container(widgets=[
             self.header('Slice'), slice_lbl, view_w, self.srow(prev_btn, next_btn),
             self.header('Dye point'), shank_w, mark_w, channel_w, probe_color_w,
             self.header('Accumulated'), summary, invert_btn,
-            self.header('Regions'), *regions.widgets,
+            self.header('Regions'), *regions.widgets, profile_btn,
             self.header('Render'), self.srow(style_w, hemisphere_w), no_root_w, render_btn,
             self.header('CSV'), self.srow(load_btn, save_btn),
             status_label,
