@@ -13,3 +13,12 @@ def test_ccf_mm_to_voxel_matches_plane_point_identity():
     got = core.ccf_mm_to_voxel(ccf, resolution=10)
     ref = core.ccf_mm_to_plane_point(ccf, project_index=(0, 1, 2), resolution=10)
     assert got == ref
+
+
+def test_shank_distances_euclidean_um():
+    pts = {
+        (1, 'dorsal'): (0.0, 0.0, 0.0),
+        (1, 'ventral'): (0.0, 3.0, 4.0),  # 5 mm -> 5000 µm
+        (2, 'dorsal'): (0.0, 1.0, 0.0),   # shank 2 has no ventral -> excluded
+    }
+    assert core.shank_distances(pts) == [(1, 5000.0)]

@@ -299,9 +299,15 @@ class SliceReconstructOptions(AbstractParser):
 
     @staticmethod
     def add_scroll_dock(viewer, panel, name: str):
+        from qtpy.QtCore import Qt
         from qtpy.QtWidgets import QScrollArea
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)  # panel fills the dock width; scrolls vertically when tall
         scroll.setWidget(panel.native)
         scroll.setMinimumWidth(360)
-        viewer.window.add_dock_widget(scroll, area='right', name=name)
+        dock = viewer.window.add_dock_widget(scroll, area='right', name=name)
+        # start the dock wider (user can still drag it narrower down to the 360 minimum)
+        try:
+            viewer.window._qt_window.resizeDocks([dock], [460], Qt.Horizontal)
+        except Exception:  # noqa: BLE001 - private API; harmless if it moves/changes
+            pass

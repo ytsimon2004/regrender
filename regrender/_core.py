@@ -230,6 +230,17 @@ def ccf_mm_to_voxel(
             (bml - ml_mm * 1000) / resolution)
 
 
+def shank_distances(pts: dict[tuple[int, str], tuple[float, float, float]]) -> list[tuple[int, float]]:
+    """Per-shank dorsal<->ventral euclidean distance (µm), from a ``{(shank, point): (AP, DV, ML) mm}``
+    map. Only shanks with both points are returned, sorted by shank number."""
+    out = []
+    for s in sorted({k for k, _ in pts}):
+        d, v = pts.get((s, 'dorsal')), pts.get((s, 'ventral'))
+        if d is not None and v is not None:
+            out.append((s, float(np.linalg.norm(np.array(v, float) - np.array(d, float))) * 1000))
+    return out
+
+
 def raw_points_to_atlas(
         pts_xy: np.ndarray, *,
         matrix: np.ndarray,

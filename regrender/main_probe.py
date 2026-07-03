@@ -11,7 +11,7 @@ from neuralib.atlas.util import ALLEN_CCF_10um_BREGMA
 from neuralib.util.verbose import fprint
 
 from regrender._core import (boundary_mask, ccf_mm_to_plane_point, ccf_mm_to_voxel, load_transform,
-                        plane_point_to_ccf_mm, read_oriented, rotate)
+                        plane_point_to_ccf_mm, read_oriented, rotate, shank_distances)
 from regrender._app import RegionPicker, SliceReconstructOptions
 
 __all__ = ['ProbeOptions']
@@ -25,22 +25,38 @@ SHADER_STYLES = ['plastic', 'cartoon', 'metallic', 'shiny', 'glossy']
 
 
 def _shank_table_html(pts: dict[tuple[int, str], tuple[float, float, float]],
-                      src: dict[tuple[int, str], str] | None = None) -> str:
-    """HTML table of picked points; each shank number is a ``del:<n>`` link to remove it."""
+                      src: dict[tuple[int, str], str] | None = None,
+                      dists: dict[int, float] | None = None) -> str:
+    """HTML table of picked points; each shank number is a ``del:<n>`` link to remove it.
+    ``dists`` maps shank -> dorsal<->ventral distance (µm), shown once per shank (spanned rows)."""
     if not pts:
         return 'no points yet'
     src = src or {}
-    rows = ['<tr><th>shank</th><th>point</th><th>AP</th><th>DV</th><th>ML</th><th>source</th></tr>']
-    for shank in sorted({s for s, _ in pts}):
-        for point in ('dorsal', 'ventral'):
-            if (shank, point) in pts:
-                ap, dv, ml = pts[(shank, point)]
-                rows.append(f'<tr><td align="center"><a href="del:{shank}">{shank} ✕</a></td>'
-                            f'<td>{point}</td><td align="right">{ap:.2f}</td>'
-                            f'<td align="right">{dv:.2f}</td><td align="right">{ml:.2f}</td>'
-                            f'<td>{src.get((shank, point), "")}</td></tr>')
-    return ('<table border=1 cellspacing=0 cellpadding=4>' + ''.join(rows)
-            + '</table><br><i>AP, DV, ML in mm · click a shank ✕ to remove it</i>')
+    dists = dists or {}
+    rows = ['<tr bgcolor="#3b4252">' + ''.join(
+        f'<th><font color="#88c0d0">&nbsp;{h}&nbsp;</font></th>'
+        for h in ('shank', 'dist', 'point', 'AP', 'DV', 'ML', 'source')) + '</tr>']
+    for si, shank in enumerate(sorted({s for s, _ in pts})):
+        bg = '#2e3440' if si % 2 else '#343b4a'  # zebra by shank (both point rows share a shade)
+        present = [p for p in ('dorsal', 'ventral') if (shank, p) in pts]
+        for i, point in enumerate(present):
+            ap, dv, ml = pts[(shank, point)]
+            dist_cell = ''
+            if i == 0:  # one distance cell per shank (next to shank), spanning its point rows
+                d = dists.get(shank)
+                txt = f'{d:.0f} µm' if d is not None else '—'
+                dist_cell = (f'<td align="right" rowspan="{len(present)}">'
+                             f'<b><font color="#88c0d0">&nbsp;{txt}&nbsp;</font></b></td>')
+            rows.append(
+                f'<tr bgcolor="{bg}">'
+                f'<td align="center"><a href="del:{shank}"><font color="#88c0d0">{shank} ✕</font></a></td>'
+                f'{dist_cell}<td align="center">&nbsp;{point[0]}&nbsp;</td>'
+                f'<td align="right">&nbsp;{ap:.2f}&nbsp;</td>'
+                f'<td align="right">&nbsp;{dv:.2f}&nbsp;</td><td align="right">&nbsp;{ml:.2f}&nbsp;</td>'
+                f'<td>&nbsp;{src.get((shank, point), "")}&nbsp;</td></tr>')
+    return ('<table border=0 cellspacing=0 cellpadding=5>' + ''.join(rows)
+            + '</table><br><i>AP, DV, ML in mm · dist = dorsal↔ventral µm · '
+              'click a shank ✕ to remove it</i>')
 
 
 def _render_command(csv: Path, plane: str, shanks: list[int], shank_colors: dict[int, str],
@@ -109,6 +125,16 @@ class ProbeOptions(SliceReconstructOptions):
                                         features={'label': np.empty(0, dtype='<U8')},
                                         text={'string': '{label}', 'color': 'cyan', 'size': 12,
                                               'translation': [-14, 0]})
+        # ruler: a draggable 2-point line that reads out its length in mm + 0.5 mm ticks along it
+        ruler_layer = viewer.add_shapes(name='ruler', edge_color='yellow', edge_width=3,
+                                        face_color='transparent')
+        ruler_layer.visible = False
+        ruler_ticks = viewer.add_points(name='ruler_ticks', face_color='white', symbol='square',
+                                        size=3, ndim=2,
+                                        features={'label': np.empty(0, dtype='<U8')},
+                                        text={'string': '{label}', 'color': 'white', 'size': 8,
+                                              'translation': [0, 8]})
+        ruler_ticks.visible = False
 
         def _set_hist_layer(display: np.ndarray):
             # napari can't flip grayscale<->RGB in place; re-create it (reorder() puts it at bottom)
@@ -165,14 +191,39 @@ class ProbeOptions(SliceReconstructOptions):
             state['syncing'] = False
 
         def on_crosses_edited(_event=None):
-            # deleting a cross in napari only mutates the layer; mirror it back into state + table
+            # editing a cross in napari only mutates the layer; mirror it back into state + table
             if state.get('syncing'):
                 return
-            survivors = {(round(y, 3), round(x, 3)) for y, x in click_layer.data}
-            removed = [k for k, (y, x) in zip(state.get('cross_keys', []), state.get('cross_here', []))
-                       if (round(y, 3), round(x, 3)) not in survivors]
-            if not removed:
+            data = click_layer.data
+            keys, old = state.get('cross_keys', []), state.get('cross_here', [])
+            if len(data) == len(keys):
+                # same count -> a move: re-derive CCF for each cross whose pixel changed
+                moved = 0
+                for idx, (ny, nx) in enumerate(data):
+                    oy, ox = old[idx]
+                    if round(ny, 3) == round(oy, 3) and round(nx, 3) == round(ox, 3):
+                        continue
+                    fr = frame_at(ny, nx)
+                    if fr is None:
+                        continue
+                    view, off, (fy, fx) = fr['view'], fr['plane_off'], fr['origin']
+                    ly, lx = ny - fy, nx - fx  # pixel within the slice under the drop
+                    if not (0 <= ly < off.shape[0] and 0 <= lx < off.shape[1]):
+                        continue
+                    state['pts'][keys[idx]] = plane_point_to_ccf_mm(
+                        off[int(ly), int(lx)], lx, ly, project_index=view.project_index,
+                        resolution=view.resolution, bregma_10um=tuple(ALLEN_CCF_10um_BREGMA))
+                    state['src'][keys[idx]] = fr.get('name', state['name'])
+                    moved += 1
+                if moved:
+                    refresh_summary()
+                    redraw_crosses()
+                    status.value = f'moved {moved} point(s)'
                 return
+            # fewer points than keys -> a deletion: drop the crosses that vanished
+            survivors = {(round(y, 3), round(x, 3)) for y, x in data}
+            removed = [k for k, (y, x) in zip(keys, old)
+                       if (round(y, 3), round(x, 3)) not in survivors]
             for k in removed:
                 state['pts'].pop(k, None)
                 state['src'].pop(k, None)
@@ -219,7 +270,8 @@ class ProbeOptions(SliceReconstructOptions):
             status.value = f'{img.name}: click the dye, marking {mark_w.value} of shank {shank_w.value}'
 
         def refresh_summary():
-            summary.value = _shank_table_html(state['pts'], state['src'])
+            dists = dict(shank_distances(state['pts']))  # shank -> dorsal<->ventral µm
+            summary.value = _shank_table_html(state['pts'], state['src'], dists)
 
         def on_table_link(href: str):
             if not href.startswith('del:'):
@@ -253,6 +305,8 @@ class ProbeOptions(SliceReconstructOptions):
 
         @viewer.mouse_drag_callbacks.append
         def on_click(_v, event):
+            if 'Shift' in event.modifiers:  # Shift is the ruler gesture, not a dye pick
+                return
             dragged = False
             yield
             while event.type == 'mouse_move':
@@ -312,6 +366,44 @@ class ProbeOptions(SliceReconstructOptions):
 
         probe_color_w.changed.connect(store_shank_color)
         shank_w.changed.connect(show_shank_color)
+
+        def _draw_ruler(y0, x0, y1, x1):
+            off, view = state.get('plane_off'), state.get('view')
+            if off is None or view is None:
+                status.value = 'ruler: single-slice view only'
+                return
+
+            def to_mm(y, x):
+                yi = int(np.clip(round(y), 0, off.shape[0] - 1))
+                xi = int(np.clip(round(x), 0, off.shape[1] - 1))
+                return np.array(plane_point_to_ccf_mm(off[yi, xi], x, y,
+                                                      project_index=view.project_index,
+                                                      resolution=view.resolution,
+                                                      bregma_10um=tuple(ALLEN_CCF_10um_BREGMA)))
+
+            dist_mm = float(np.linalg.norm(to_mm(y1, x1) - to_mm(y0, x0)))
+            ruler_layer.visible = ruler_ticks.visible = True
+            ruler_layer.data = [np.array([[y0, x0], [y1, x1]])]
+            ruler_layer.shape_type = 'line'
+            pts, labels = [], []  # a tick every 100 µm from the start, labelled in µm
+            for e in np.arange(0, dist_mm + 1e-9, 0.1) if dist_mm > 0 else []:
+                f = e / dist_mm
+                pts.append([y0 + (y1 - y0) * f, x0 + (x1 - x0) * f])
+                labels.append(f'{e * 1000:.0f}')
+            ruler_ticks.data = np.array(pts) if pts else np.empty((0, 2))
+            ruler_ticks.features = {'label': np.array(labels, dtype='<U8')}
+            status.value = f'ruler: {dist_mm * 1000:.0f} µm ({dist_mm:.3f} mm)'
+
+        @viewer.mouse_drag_callbacks.append
+        def on_ruler_drag(_v, event):
+            if 'Shift' not in event.modifiers:  # Shift+left-drag draws the ruler
+                return
+            y0, x0 = event.position
+            yield
+            while event.type == 'mouse_move':
+                y1, x1 = event.position
+                _draw_ruler(y0, x0, y1, x1)
+                yield
 
         _CSV_COLS = {'AP_location', 'DV_location', 'ML_location', 'probe_idx', 'point'}
 
@@ -377,34 +469,40 @@ class ProbeOptions(SliceReconstructOptions):
         def region_profile():
             # for each shank, sample dorsal->ventral and show which region each depth band is in
             shanks = sorted({s for s, _ in state['pts']})
-            tracks = []  # (shank, runs, dv_span); runs = [(dv0, dv1, acronym), ...] in mm
+            tracks = []  # (shank, runs, d, v, length); runs = [(dv0, dv1, acronym, extrapolated)]
             for s in shanks:
                 d, v = state['pts'].get((s, 'dorsal')), state['pts'].get((s, 'ventral'))
                 if d is None or v is None:
                     status.value = f'shank {s} missing its dorsal/ventral point'
                     return
                 d, v = np.array(d, float), np.array(v, float)
-                ts = np.linspace(0, 1, 256)
-                dvs = d[1] + (v[1] - d[1]) * ts  # DV (mm) at each sample, dorsal -> ventral
-                dv_span = abs(v[1] - d[1])
+                vec = v - d  # dorsal -> ventral direction
+                length = float(np.linalg.norm(vec))  # dye euclidean length (mm)
+                if length == 0:
+                    status.value = f'shank {s}: dorsal and ventral points coincide'
+                    return
+                # extrapolate the dye line to the implant depth (from dorsal) if --depth is set
+                t_max = max(1.0, (self.depth / 1000.0) / length) if self.depth else 1.0
+                n = max(256, int(256 * t_max))
+                ts = np.linspace(0, t_max, n)
+                dvs = d[1] + vec[1] * ts  # DV (mm) at each sample
                 acrs = []
                 for t in ts:
                     try:
-                        a = bg.structure_from_coords(ccf_mm_to_voxel(tuple(d + (v - d) * t)),
+                        a = bg.structure_from_coords(ccf_mm_to_voxel(tuple(d + vec * t)),
                                                      microns=False, as_acronym=True)
                     except Exception:  # noqa: BLE001 - outside the annotated volume
                         a = 'out'
                     acrs.append(a)
                 runs, i = [], 0
-                while i < len(ts):  # collapse consecutive samples of the same region into one band
+                while i < n:  # collapse consecutive samples of the same region into one band
                     j = i
-                    while j < len(ts) and acrs[j] == acrs[i]:
+                    while j < n and acrs[j] == acrs[i]:
                         j += 1
-                    # extend to the next band's boundary (dvs[j]) so bands abut with no gaps
-                    dv_end = dvs[j] if j < len(ts) else dvs[-1]
-                    runs.append((dvs[i], dv_end, acrs[i]))
+                    dv_end = dvs[j] if j < n else dvs[-1]  # abut the next band (no gaps)
+                    runs.append((dvs[i], dv_end, acrs[i], ts[i] > 1.0))  # flag extrapolated part
                     i = j
-                tracks.append((s, runs, dv_span))
+                tracks.append((s, runs, d, v, length))
             if not tracks:
                 status.value = 'no shanks to plot'
                 return
@@ -417,18 +515,30 @@ class ProbeOptions(SliceReconstructOptions):
                     return 0.85, 0.85, 0.85  # 'out' / root / unknown
 
             import matplotlib.pyplot as plt
-            fig, ax = plt.subplots(figsize=(1.6 * len(tracks) + 1, 6))
-            for xi, (s, runs, dv_span) in enumerate(tracks):
-                for dv0, dv1, a in runs:
+            fig, ax = plt.subplots(figsize=(1.9 * len(tracks) + 1, 6))
+            for xi, (s, runs, d, v, length) in enumerate(tracks):
+                for dv0, dv1, a, extrap in runs:
                     lo, hi = min(dv0, dv1), max(dv0, dv1)
                     ax.bar(xi, hi - lo, bottom=lo, width=0.8, color=acr_color(a),
-                           edgecolor='white', linewidth=0.5)
+                           edgecolor='white', linewidth=0.5,
+                           alpha=0.55 if extrap else 1.0, hatch='//' if extrap else None)
                     ax.text(xi, (lo + hi) / 2, a, ha='center', va='center', fontsize=7)
+                # ruler: euclidean distance from the dorsal point, ticked every 0.5 mm on the left
+                vec_dv = v[1] - d[1]
+                e_max = length * (max(1.0, (self.depth / 1000.0) / length) if self.depth else 1.0)
+                for e in np.arange(0, e_max + 1e-9, 0.5):
+                    y = d[1] + vec_dv * (e / length)  # DV position of this euclidean distance
+                    ax.plot([xi - 0.45, xi - 0.4], [y, y], color='0.3', linewidth=0.8)
+                    ax.text(xi - 0.47, y, f'{e:.1f}', ha='right', va='center', fontsize=6, color='0.3')
+                # mark the ventral dye point + its euclidean distance from dorsal
+                ax.plot([xi - 0.4, xi + 0.4], [v[1], v[1]], color='k', linestyle='--', linewidth=0.8)
+                ax.text(xi + 0.42, v[1], f'v {length:.2f} mm', ha='left', va='center', fontsize=6)
             ax.set_xticks(range(len(tracks)))
-            ax.set_xticklabels([f'shank {s}' for s, _, _ in tracks])
-            ax.set_ylabel('DV from bregma (mm)')
-            ax.set_title('Probe region profile')
+            ax.set_xticklabels([f'shank {s}' for s, *_ in tracks])
+            ax.set_ylabel('DV from bregma (mm)   ·   left ticks = mm from dorsal (euclidean)')
+            ax.set_title('Probe region profile' + ('  (// = extrapolated to depth)' if self.depth else ''))
             ax.invert_yaxis()  # dorsal (smaller DV) at top
+            ax.margins(x=0.15)
             fig.tight_layout()
             self._out.parent.mkdir(parents=True, exist_ok=True)
             out = self._out.parent / 'probe_region_profile.png'
