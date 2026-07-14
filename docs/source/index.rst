@@ -18,6 +18,6 @@ Getting Started
 
 .. toctree::
    :maxdepth: 2
-   :caption: Examples
+   :caption: Documentation
 
    get_start/index

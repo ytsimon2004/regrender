@@ -31,29 +31,10 @@ class RegisterOptions(AbstractParser):
         help='histology image path (optional; can also load it from the GUI)'
     )
 
-    cut_plane: PLANE_TYPE = argument(
-        '-P', '--plane-type',
-        default='coronal',
-        help='cutting orientation'
-    )
-
-    resolution: int = argument('--resolution', default=10, help='atlas resolution (um)')
-
-    output_dir: Path | None = argument(
-        '-O', '--output-dir',
+    directory: Path | None = argument(
+        '-D', '--directory',
         default=None,
-        help='output directory (default: <image-dir>/transformations)'
-    )
-
-    name: str | None = argument('--name', default=None, help='output name (default: image stem)')
-    flip_lr: bool = argument('--flip-lr', help='flip histology left-right before registration')
-    flip_ud: bool = argument('--flip-ud', help='flip histology up-down before registration')
-    affine: bool = argument('--affine', help='use affine instead of projective transform')
-
-    boundary_color: str = argument(
-        '--boundary-color',
-        default='orange',
-        help='annotation boundary overlay color (matplotlib name or #hex)'
+        help='folder of serial sections; step through them with Prev/Next in the GUI'
     )
 
     load: Path | None = argument(
@@ -62,11 +43,24 @@ class RegisterOptions(AbstractParser):
         help='resume from a saved *_transform.json (restores points + index/dw/dh/rotate/flips)'
     )
 
-    directory: Path | None = argument(
-        '-D', '--directory',
+    output_dir: Path | None = argument(
+        '-O', '--output-dir',
         default=None,
-        help='folder of serial sections; step through them with Prev/Next in the GUI'
+        help='output directory (default: <image-dir>/transformations)'
     )
+
+    # noinspection PyTypeChecker
+    cut_plane: PLANE_TYPE = argument(
+        '-P', '--plane-type',
+        default='coronal',
+        help='cutting orientation'
+    )
+
+    resolution: int = argument('--resolution', default=10, help='atlas resolution (um)')
+    name: str | None = argument('--name', default=None, help='output name (default: image stem)')
+    flip_lr: bool = argument('--flip-lr', help='flip histology left-right before registration')
+    flip_ud: bool = argument('--flip-ud', help='flip histology up-down before registration')
+    affine: bool = argument('--affine', help='use affine instead of projective transform')
 
     #
     AXIS = {'coronal': ('ML', 'DV'), 'sagittal': ('AP', 'DV')}
@@ -151,7 +145,7 @@ class RegisterOptions(AbstractParser):
                 text={'string': '{n}', 'color': color, 'size': 12, 'translation': [-12, 0]}
             )
 
-        brgb = to_rgb(self.boundary_color)  # (r, g, b) in 0..1
+        brgb = to_rgb('orange')  # (r, g, b) in 0..1
         state['brgb'] = brgb
         bcmap = Colormap([[0, 0, 0], list(brgb)], name='boundary')  # 0 -> transparent (additive), 1 -> color
 
@@ -244,10 +238,8 @@ class RegisterOptions(AbstractParser):
         grid_w = CheckBox(label='xy grid', value=False)
         grid_w.changed.connect(lambda *_: setattr(grid_layer, 'visible', grid_w.value))
 
-        colors = ['orange', 'red', 'cyan', 'yellow', 'magenta', 'lime', 'white', 'blue']
-        if self.boundary_color not in colors:
-            colors = [self.boundary_color] + colors
-        color_w = ComboBox(label='boundary color', choices=colors, value=self.boundary_color)
+        color_w = ComboBox(label='boundary color', value='orange',
+                           choices=['orange', 'red', 'cyan', 'yellow', 'magenta', 'lime', 'white', 'blue'])
 
         def set_bcolor(*_):
             state['brgb'] = to_rgb(color_w.value)

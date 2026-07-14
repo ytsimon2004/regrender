@@ -12,7 +12,11 @@ Reconstruct electrode/probe shanks from dye labels on registered slices, then re
 
 .. code-block:: bash
 
+    # dye-only reconstruction
     regrender probe -D <slices_dir>
+
+    # add a theoretical track: 4000 µm implant depth, contacts every 20 µm
+    regrender probe -D <slices_dir> --depth 4000 --interval 20
 
 Workflow
 --------
@@ -30,6 +34,15 @@ Each slice's ``*_transform.json`` is loaded and the histology is re-warped into 
 
 Picked points are saved to ``probe_shanks.csv`` (``ap_mm``, ``dv_mm``, ``ml_mm``,
 ``probe_idx``, ``point``, ``source``).
+
+.. tip::
+
+    The **view** selector switches between ``single`` (one section at a time) and ``all`` (every
+    registered slice tiled into one mosaic, so a shank spanning several sections can be picked
+    without paging back and forth). Clicks are mapped back to the correct section automatically.
+
+    Hold **Shift** and left-drag to draw a **ruler** — a draggable line that reads out its length
+    in mm with 0.5 mm ticks (single-slice view only).
 
 The **Region profile plot** button samples each shank dorsal→ventral and shows which Allen
 region every depth band falls in (colored by the atlas), with a euclidean-mm ruler from the

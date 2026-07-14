@@ -28,7 +28,8 @@ The GUI shows the atlas plane on the left and your histology on the right.
 2. Adjust the slice with **rotate** and **flip L-R / U-D** as needed.
 3. Pick matched **landmark pairs** — click a point on the atlas, then the corresponding point
    on the slice (alternating). A homography (or ``--affine`` transform) is estimated from them.
-4. Toggle **Preview** to overlay the warped histology under the atlas boundaries.
+4. Toggle **Preview** to overlay the warped histology under the atlas boundaries, and the
+   **xy grid** display to show a reference grid over the histology while placing points.
 5. **Save** to write the registration to ``<output-dir>/`` (default ``<image-dir>/transformations``):
 
    - ``<name>_transform.json`` — matrix + metadata (see :doc:`data_structure`)
@@ -63,7 +64,5 @@ Options
      - Flip the histology before registration.
    * - ``--affine``
      - Use an affine instead of projective (homography) transform.
-   * - ``--boundary-color``
-     - Atlas boundary overlay color (matplotlib name or ``#hex``; default ``orange``).
    * - ``--load``
      - Resume from a saved ``*_transform.json`` (needs the matching ``-I`` image).
