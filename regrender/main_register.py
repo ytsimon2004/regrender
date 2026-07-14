@@ -396,13 +396,20 @@ class RegisterOptions(AbstractParser):
             iio.imwrite(trans_path, warped)
             status.value = f'saved -> {trans_path}'
 
+            # overlay = histology + boundaries, segmented to the area the boundaries enclose:
+            # everything outside the annotated brain is dropped (alpha 0), not painted black
+            ann = np.asarray(state['ann'])
+            inside = ann > 0  # annotated brain area; 0 = outside the atlas plane
             rgb = warped if warped.ndim == 3 else np.stack([warped] * 3, axis=-1)
-            rgb = rgb[..., :3].copy()
+            rgba = np.zeros((*ann.shape, 4), dtype=np.uint8)
+            rgba[inside, :3] = rgb[..., :3][inside]
             # use the color currently shown on the left atlas panel so the saved overlay matches
             bcol = np.asarray(bound_layer.colormap.colors[-1])[:3]
-            rgb[boundary_mask(state['ann']).astype(bool)] = tuple(int(c * 255) for c in bcol)
-            overlay_path = out_dir / f'{name}_overlay.tif'
-            iio.imwrite(overlay_path, rgb)
+            mask = boundary_mask(ann).astype(bool)
+            rgba[mask, :3] = [int(c * 255) for c in bcol]
+            rgba[inside | mask, 3] = 255
+            overlay_path = out_dir / f'{name}_overlay.png'
+            iio.imwrite(overlay_path, rgba)
             status.value = f'saved -> {overlay_path}'
 
         def on_undo():

@@ -13,7 +13,7 @@ looks like this after running the full pipeline:
         ├── transformations/                 # created by `regrender register`
         │     ├── <stem>_transform.json      # registration metadata (see below)
         │     ├── <stem>_transformed.tif     # histology warped into atlas space
-        │     └── <stem>_overlay.tif         # warped histology with atlas boundaries burned in
+        │     └── <stem>_overlay.png         # histology + boundaries, outside the brain transparent
         │
         ├── roi/                             # created by `regrender roi`
         │     ├── roi_points_raw.csv         # ROIs in raw pixel coords

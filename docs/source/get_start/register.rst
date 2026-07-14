@@ -34,7 +34,8 @@ The GUI shows the atlas plane on the left and your histology on the right.
 
    - ``<name>_transform.json`` — matrix + metadata (see :doc:`data_structure`)
    - ``<name>_transformed.tif`` — histology warped into atlas space
-   - ``<name>_overlay.tif`` — warped histology with atlas boundaries burned in
+   - ``<name>_overlay.png`` — warped histology with atlas boundaries burned in, segmented to
+     the brain: everything outside the atlas region is transparent
 
 Use ``--load <…_transform.json>`` (with ``-I``) to resume a saved session — it restores the
 points, slice index, tilt, rotation, and flips.
