@@ -29,6 +29,7 @@ __all__ = ['RoiOptions', 'project_raw_rois']
 
 _COLORS = ['orange', 'magenta', 'red', 'cyan', 'yellow', 'lime', 'green', 'blue', 'white', 'dimgray']
 SHADER_STYLES = ['plastic', 'cartoon', 'metallic', 'shiny', 'glossy']
+CAMERA_ANGLES = ['three_quarters', 'sagittal', 'sagittal2', 'frontal', 'top', 'top_side']
 
 RAW_COLS = ('slice', 'x', 'y', 'raw_h', 'raw_w')  # saved raw-ROI csv schema (channel optional, added on save)
 # per-channel cross / render color; 'merge' overridden by the GUI ROI-color picker
@@ -102,7 +103,8 @@ def write_channel_csvs(ccf_rows, dest_dir: Path) -> list[tuple[str, Path]]:
 
 
 def _render_argv(channel_files: list[tuple[str, Path]], radius: float, ch_color: dict[str, str],
-                 region_colors: dict[str, str], style: str, no_root: bool, hemisphere: str) -> list[str]:
+                 region_colors: dict[str, str], style: str, no_root: bool, hemisphere: str,
+                 camera: str = CAMERA_ANGLES[0]) -> list[str]:
     """``RoiRenderCLI`` argv (after ``-m``): one --file per channel + matching colors + region meshes."""
     cmd = ['neuralib.atlas.brainrender.roi']
     colors = []
@@ -110,7 +112,7 @@ def _render_argv(channel_files: list[tuple[str, Path]], radius: float, ch_color:
         cmd += ['--file', str(p)]
         colors.append(ch_color.get(ch, 'orange'))
     cmd += ['--roi-colors', ','.join(colors), '--roi-radius', str(radius),
-            '--style', style, '--hemisphere', hemisphere]
+            '--style', style, '--hemisphere', hemisphere, '--camera', camera]
     if no_root:
         cmd.append('--no-root')
     if region_colors:
@@ -355,6 +357,7 @@ class RoiOptions(SliceReconstructOptions):
         regions = RegionPicker(bg.structures)
         style_w = ComboBox(label='style', choices=SHADER_STYLES, value=SHADER_STYLES[0])
         hemisphere_w = ComboBox(label='hemisphere', choices=['both', 'left', 'right'], value='both')
+        camera_w = ComboBox(label='camera', choices=CAMERA_ANGLES, value=CAMERA_ANGLES[0])
         no_root_w = CheckBox(label='no root (hide brain)', value=False)
         color_w = ComboBox(label='ROI color', choices=_COLORS,
                            value=self.roi_color if self.roi_color in _COLORS else _COLORS[0])
@@ -406,7 +409,7 @@ class RoiOptions(SliceReconstructOptions):
                 ch_color = {**_CH_COLOR, 'merge': color_w.value}
                 self.launch_render(
                     _render_argv(ch_files, self.roi_radius, ch_color, regions.colors,
-                                 style_w.value, no_root_w.value, hemisphere_w.value),
+                                 style_w.value, no_root_w.value, hemisphere_w.value, camera_w.value),
                     status, f'rendering {len(ccf_rows)} ROI(s) across {len(ch_files)} channel(s)...')
 
         def step(delta: int):
@@ -458,7 +461,7 @@ class RoiOptions(SliceReconstructOptions):
             self.header('Slice'), slice_lbl, self.srow(prev_btn, next_btn), verify_w,
             self.header('ROIs'), summary, undo_btn, pan_w, channel_w, color_w,
             self.header('Regions'), *regions.widgets,
-            self.header('Render'), self.srow(style_w, hemisphere_w), no_root_w, project_btn,
+            self.header('Render'), self.srow(style_w, hemisphere_w), camera_w, no_root_w, project_btn,
             self.header('CSV'), self.srow(load_btn, save_btn),
             status_label,
         ])

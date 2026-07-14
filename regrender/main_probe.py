@@ -22,6 +22,7 @@ _POINT = {'superficial': 'dorsal', 'deep': 'ventral'}
 _COLORS = ['red', 'salmon', 'darkred', 'cyan', 'yellow', 'magenta',
            'lime', 'green', 'blue', 'orange', 'white', 'black']
 SHADER_STYLES = ['plastic', 'cartoon', 'metallic', 'shiny', 'glossy']
+CAMERA_ANGLES = ['three_quarters', 'sagittal', 'sagittal2', 'frontal', 'top', 'top_side']
 
 
 def _shank_table_html(pts: dict[tuple[int, str], tuple[float, float, float]],
@@ -61,10 +62,12 @@ def _shank_table_html(pts: dict[tuple[int, str], tuple[float, float, float]],
 
 def _render_command(csv: Path, plane: str, shanks: list[int], shank_colors: dict[int, str],
                     region_colors: dict[str, str], depth: int | None, interval: int | None,
-                    style: str = 'plastic', no_root: bool = False, hemisphere: str = 'both') -> list[str]:
+                    style: str = 'plastic', no_root: bool = False, hemisphere: str = 'both',
+                    camera: str = CAMERA_ANGLES[0]) -> list[str]:
     """``ProbeRenderCLI`` argv (after ``-m``): per-shank dye colors, optional track, region meshes."""
     cmd = ['neuralib.atlas.brainrender.probe',
            '--file', str(csv), '--plane-type', plane, '--style', style, '--hemisphere', hemisphere,
+           '--camera', camera,
            '--probe-color', ','.join(shank_colors.get(s, 'red') for s in shanks)]
     if no_root:
         cmd.append('--no-root')
@@ -352,6 +355,7 @@ class ProbeOptions(SliceReconstructOptions):
         regions = RegionPicker(bg.structures)
         style_w = ComboBox(label='style', choices=SHADER_STYLES, value=SHADER_STYLES[0])
         hemisphere_w = ComboBox(label='hemisphere', choices=['both', 'left', 'right'], value='both')
+        camera_w = ComboBox(label='camera', choices=CAMERA_ANGLES, value=CAMERA_ANGLES[0])
         no_root_w = CheckBox(label='no root (hide brain)', value=False)
 
         # per-shank dye color: pick a shank (above), then set its color here
@@ -464,7 +468,7 @@ class ProbeOptions(SliceReconstructOptions):
             shanks = sorted({s for s, _ in state['pts']})  # same order as the saved CSV rows
             cmd = _render_command(csv, state['plane'] or 'coronal', shanks, shank_colors,
                                   regions.colors, self.depth, self.interval, style_w.value,
-                                  no_root_w.value, hemisphere_w.value)
+                                  no_root_w.value, hemisphere_w.value, camera_w.value)
             self.launch_render(cmd, status,
                                f'rendering ({len(shanks)} shank(s)'
                                + (f', {len(regions.colors)} region(s)' if regions.colors else '')
@@ -522,13 +526,18 @@ class ProbeOptions(SliceReconstructOptions):
 
             import matplotlib.pyplot as plt
             fig, ax = plt.subplots(figsize=(1.9 * len(tracks) + 1, 6))
+            # only label a band that is tall enough to hold the text; thin slivers would just
+            # overprint each other (every band is in the csv anyway)
+            all_dv = [dv for _s, runs, *_ in tracks for r in runs for dv in r[:2]]
+            min_h = 0.025 * (max(all_dv) - min(all_dv))
             for xi, (s, runs, d, v, length) in enumerate(tracks):
                 for dv0, dv1, a, extrap, _e0, _e1 in runs:
                     lo, hi = min(dv0, dv1), max(dv0, dv1)
                     ax.bar(xi, hi - lo, bottom=lo, width=0.8, color=acr_color(a),
                            edgecolor='white', linewidth=0.5,
                            alpha=0.55 if extrap else 1.0, hatch='//' if extrap else None)
-                    ax.text(xi, (lo + hi) / 2, a, ha='center', va='center', fontsize=7)
+                    if hi - lo >= min_h:
+                        ax.text(xi, (lo + hi) / 2, a, ha='center', va='center', fontsize=7)
                 # ruler: euclidean distance from the dorsal point, ticked every 0.5 mm on the left
                 vec_dv = v[1] - d[1]
                 e_max = length * (max(1.0, (self.depth / 1000.0) / length) if self.depth else 1.0)
@@ -657,7 +666,7 @@ class ProbeOptions(SliceReconstructOptions):
             self.header('Dye point'), shank_w, mark_w, channel_w, probe_color_w,
             self.header('Accumulated'), summary, invert_btn,
             self.header('Regions'), *regions.widgets, profile_btn,
-            self.header('Render'), self.srow(style_w, hemisphere_w), no_root_w, render_btn,
+            self.header('Render'), self.srow(style_w, hemisphere_w), camera_w, no_root_w, render_btn,
             self.header('CSV'), self.srow(load_btn, save_btn),
             status_label,
         ])

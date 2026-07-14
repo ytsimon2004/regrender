@@ -13,8 +13,13 @@ from typing import Any, TypedDict
 import cv2
 import imageio.v3 as iio
 import numpy as np
+import PIL.Image
 from neuralib.atlas.ccf.matrix import SLICE_DIMENSION_10um
 from neuralib.atlas.typing import PLANE_TYPE
+
+# whole-slide scans routinely exceed Pillow's 0.18 GPixel decompression-bomb cap; the
+# files are our own, not untrusted uploads
+PIL.Image.MAX_IMAGE_PIXELS = None
 
 __all__ = [
     'read_oriented', 'rotate', 'to_uint8', 'boundary_mask', 'region_name',
