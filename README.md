@@ -1,5 +1,11 @@
 # regrender
 
+[![PyPI](https://img.shields.io/pypi/v/regrender)](https://pypi.org/project/regrender/)
+[![Python](https://img.shields.io/pypi/pyversions/regrender)](https://pypi.org/project/regrender/)
+[![License: MIT](https://img.shields.io/pypi/l/regrender)](https://github.com/ytsimon2004/regrender/blob/main/LICENSE)
+[![CI](https://github.com/ytsimon2004/regrender/actions/workflows/ci.yml/badge.svg)](https://github.com/ytsimon2004/regrender/actions/workflows/ci.yml)
+[![Docs](https://readthedocs.org/projects/regrender/badge/?version=latest)](https://regrender.readthedocs.io)
+
 **Tools for 2D mouse brain registration to the Allen Common Coordinate Framework (CCF)**
 
 A napari-based Python toolkit
@@ -50,17 +56,15 @@ See the [installation docs](https://regrender.readthedocs.io/en/latest/get_start
 ## Quick Start
 
 ```bash
-# 1. label ROIs on raw slices
-regrender roi -D <slices_dir>
-
-# 2. register each slice to the CCF
+# Register each slice to the CCF   -> opens the registration GUI
 regrender register -D <slices_dir>
 
-# 3. project ROIs to CCF + render  (or use the GUI "Project + Render" button)
-regrender roi --project --render -D <slices_dir>
+# Label ROIs on raw slices        -> opens the ROI GUI
+regrender roi -D <slices_dir>
 
-# probe tracks
+# Probe tracks                        -> opens the probe GUI
 regrender probe -D <slices_dir>
+
 ```
 
 See the [full documentation](https://regrender.readthedocs.io) for the complete workflow.
