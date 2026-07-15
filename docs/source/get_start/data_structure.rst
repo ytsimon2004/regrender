@@ -85,8 +85,3 @@ The **Region profile plot** button also writes ``probe_region_profile.pdf`` and
 ``probe_region_profile.csv`` (one row per region span per shank: ``shank``, ``region``,
 ``extrapolated``, ``dv_start_mm``, ``dv_end_mm``, ``depth_start_mm``, ``depth_end_mm``,
 ``length_mm``).
-
-.. note::
-
-    Optional upstream preprocessing (channel split/merge, rescaling, ROI TIFF generation) can
-    be done in Fiji/ImageJ — see the macros under ``res/fiji`` in the repository.

@@ -1,23 +1,32 @@
 Installation
 ===============
 
-Quick Install (End Users)
--------------------------
+Three ways to install, depending on whether you just want the ``regrender`` command or an
+editable developer checkout:
 
-If you just want to use the ``regrender`` command (no cloning, no dev setup), install it as a
-`uv tool <https://docs.astral.sh/uv/guides/tools/>`_ straight from GitHub:
+- **Option 1 — one-shot uv tool** (no clone, no env): just use the CLI. *Recommended for end users.*
+- **Option 2 — uv virtual environment**: editable checkout for development.
+- **Option 3 — conda environment**: editable checkout for development.
+
+Prerequisites
+-------------
+
+* Python 3.12 or higher
+* Git (for Options 2 and 3)
+
+Option 1 — One-shot install with uv (no environment)
+----------------------------------------------------
+
+If you just want to run the ``regrender`` command, install it as a
+`uv tool <https://docs.astral.sh/uv/guides/tools/>`_ straight from GitHub — no cloning, no
+virtual environment to manage:
 
 .. code-block:: bash
 
     uv tool install git+https://github.com/ytsimon2004/regrender.git
 
-This installs ``regrender`` into an isolated environment and puts it on your ``PATH``. Verify with:
-
-.. code-block:: bash
-
-    regrender --help
-
-To upgrade later, or to remove it:
+This installs ``regrender`` into an isolated environment and puts it on your ``PATH``. Upgrade or
+remove it later with:
 
 .. code-block:: bash
 
@@ -29,77 +38,49 @@ To upgrade later, or to remove it:
     If ``regrender`` is not found after install, run ``uv tool update-shell`` (then restart your
     shell) to add uv's tool directory to your ``PATH``.
 
-The sections below are for **developers** who want an editable checkout.
+Option 2 — uv virtual environment (development)
+-----------------------------------------------
 
-Prerequisites
--------------
-
-* Python 3.12 or higher
-* Git (for cloning the repository)
-
-First, clone the repository and navigate to the project directory:
+For an editable checkout. `uv <https://docs.astral.sh/uv/getting-started/installation/>`_ is a
+fast Python package installer and resolver — install it first if you don't have it.
 
 .. code-block:: bash
 
+    # Clone
     git clone https://github.com/ytsimon2004/regrender.git
     cd regrender
 
-
-UV Environment (Recommended)
--------------------------------
-
-UV is a fast Python package installer and resolver. If you don't have UV installed, install it first:
-
-.. seealso::
-
-    https://docs.astral.sh/uv/getting-started/installation/
-
-Then set up the environment:
-
-.. code-block:: bash
-
-    # Create virtual environment
+    # Create and activate a virtual environment
     uv venv
-
-    # Activate environment
     source .venv/bin/activate         # Linux/macOS
-    .venv\Scripts\activate           # Windows
+    .venv\Scripts\activate            # Windows
 
-    # Install package in development mode
+    # Install in editable mode
     uv pip install -e .
 
-Conda Environment
-------------------
+Option 3 — conda environment (development)
+------------------------------------------
 
-If you prefer using Conda for environment management:
+If you prefer conda for environment management:
 
 .. code-block:: bash
 
-    # Create conda environment with Python 3.12
-    conda create -n regrender python=3.12 -y
+    # Clone
+    git clone https://github.com/ytsimon2004/regrender.git
+    cd regrender
 
-    # Activate environment
+    # Create and activate a conda environment
+    conda create -n regrender python=3.12 -y
     conda activate regrender
 
-    # Install package in development mode
+    # Install in editable mode
     pip install -e .
 
 Verification
 ------------
 
-After installation, verify that regrender is working correctly:
+After any of the above, verify that ``regrender`` is available:
 
 .. code-block:: bash
 
-    # Check if the command is available
     regrender --help
-
-.. note::
-
-    Atlas data is **not** downloaded by regrender directly. The Allen CCF atlas is fetched
-    automatically by BrainGlobe/neuralib the first time you run ``register``, ``roi``, or
-    ``probe`` (this may take a few minutes on first use).
-
-.. note::
-
-    If you encounter issues with ``llvmlite`` or ``numba`` dependencies on Python 3.12, this is a known compatibility issue with some atlas visualization libraries. The core registration functionality will still work.

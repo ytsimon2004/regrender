@@ -28,12 +28,28 @@ reconstructing probe tracks, and rendering the results with brainrender.
 <img src="docs/source/_static/probe.png" alt="probe" width="800">
 
 
+## Installation
+
+```bash
+# Option 1 — one-shot CLI install, no clone or env needed (recommended for users)
+uv tool install git+https://github.com/ytsimon2004/regrender.git
+
+# Option 2 — uv virtual environment (development)
+git clone https://github.com/ytsimon2004/regrender.git && cd regrender
+uv venv && source .venv/bin/activate
+uv pip install -e .
+
+# Option 3 — conda environment (development)
+git clone https://github.com/ytsimon2004/regrender.git && cd regrender
+conda create -n regrender python=3.12 -y && conda activate regrender
+pip install -e .
+```
+
+See the [installation docs](https://regrender.readthedocs.io/en/latest/get_start/installation.html) for details.
+
 ## Quick Start
 
 ```bash
-# install as a CLI tool (no clone needed)
-uv tool install git+https://github.com/ytsimon2004/regrender.git
-
 # 1. label ROIs on raw slices
 regrender roi -D <slices_dir>
 

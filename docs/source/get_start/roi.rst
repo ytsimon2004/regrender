@@ -67,8 +67,3 @@ Options
      - Rendered ROI sphere radius in µm (default ``30``).
    * - ``--roi-color``
      - Rendered ROI point color (default ``orange``).
-
-.. note::
-
-    ROI TIFFs can also be prepared upstream in Fiji/ImageJ (e.g. the *multipoint* tool, saved
-    as ``.roi``) — see the macros under ``res/fiji``. That step is optional.
