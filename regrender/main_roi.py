@@ -21,9 +21,16 @@ from neuralib.atlas.ccf.matrix import slice_transform_helper
 from neuralib.atlas.util import ALLEN_CCF_10um_BREGMA
 from neuralib.util.verbose import fprint
 
-from regrender._core import (boundary_mask, load_transform, plane_point_to_ccf_mm, raw_points_to_atlas,
-                        read_oriented, region_name, rotate)
 from regrender._app import RegionPicker, SliceReconstructOptions
+from regrender._core import (
+    boundary_mask,
+    load_transform,
+    plane_point_to_ccf_mm,
+    raw_points_to_atlas,
+    read_oriented,
+    region_name,
+    rotate,
+)
 
 __all__ = ['RoiOptions', 'project_raw_rois']
 
@@ -82,7 +89,7 @@ def project_raw_rois(rows, get_views, structures, transform_for):
 
 def _render_tmpdir() -> Path:
     # per-channel render inputs live in a throwaway temp dir; the OS reaps it, the data folder stays clean
-    return Path(tempfile.mkdtemp(prefix='regrender_roi_'))  # ponytail: leak is a few KB in /tmp per render
+    return Path(tempfile.mkdtemp(prefix='regrender_roi_'))  # not cleaned up: a few KB in /tmp per render
 
 
 def write_channel_csvs(ccf_rows, dest_dir: Path) -> list[tuple[str, Path]]:

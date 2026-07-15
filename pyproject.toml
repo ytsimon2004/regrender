@@ -1,12 +1,21 @@
 [project]
 name = "regrender"
 version = "0.1.0"
-description = "2D mouse brain registration, ROI annotation, and brainrender reconstruction"
+description = "2D mouse brain registration, ROI/Probe annotation, and brainrender reconstruction"
 readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
 authors = [
     { name = "Yu-Ting Wei", email = "ytsimon2004@gmail.com" },
 ]
 requires-python = ">=3.12"
+keywords = ["neuroscience", "brain-atlas", "registration", "brainrender", "napari", "allen-ccf"]
+classifiers = [
+    "Programming Language :: Python :: 3.12",
+    "Operating System :: OS Independent",
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering :: Bio-Informatics",
+]
 dependencies = [
     "argclz>=1.0.1",
     "neuralib-atlas[brainrender]>=0.7.3",
@@ -27,6 +36,16 @@ test = [
     'pytest'
 ]
 
+lint = [
+    'ruff',
+    'mypy',
+]
+
+[project.urls]
+Homepage = "https://github.com/ytsimon2004/regrender"
+Repository = "https://github.com/ytsimon2004/regrender"
+Documentation = "https://regrender.readthedocs.io"
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
@@ -34,3 +53,20 @@ build-backend = "hatchling.build"
 
 [project.scripts]
 regrender = "regrender.__main__:main"
+
+[tool.ruff]
+line-length = 120
+
+[tool.ruff.lint]
+extend-select = ["I"]  # import sorting
+ignore = ["E731", "E741"]  # local lambda helpers and `l` names are deliberate
+
+[tool.mypy]
+python_version = "3.12"
+ignore_missing_imports = true  # napari/brainrender/magicgui ship no stubs
+
+# GUI glue: heterogeneous state dicts + PyQt5 enum stubs read as `object`, not real bugs.
+# Core logic (_core.py) and the other modules stay type-checked.
+[[tool.mypy.overrides]]
+module = ["regrender._app", "regrender.main_register"]
+ignore_errors = true

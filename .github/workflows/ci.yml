@@ -1,0 +1,29 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: uvx ruff check .
+      - run: uvx mypy regrender/
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+      # napari import needs a display + Qt/OpenGL system libs
+      - uses: pyvista/setup-headless-display-action@v3
+      - run: uv sync --extra test
+      - run: uv run pytest -q
+        env:
+          QT_QPA_PLATFORM: offscreen

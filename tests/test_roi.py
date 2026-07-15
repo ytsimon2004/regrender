@@ -2,7 +2,6 @@
 stubbing the atlas views so it runs without loading Allen volumes."""
 import numpy as np
 import polars as pl
-
 from neuralib.atlas.ccf.matrix import SLICE_DIMENSION_10um
 
 from regrender.main_roi import project_raw_rois, write_channel_csvs

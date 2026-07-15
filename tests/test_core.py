@@ -8,7 +8,6 @@ import pytest
 
 from regrender import _core as core
 
-
 # --- transform -------------------------------------------------------------
 
 def test_estimate_transform_projective_roundtrip():
@@ -143,6 +142,7 @@ def test_ccf_mm_to_plane_point_inverts():
 
 def test_render_command_per_shank_and_region_colors():
     from pathlib import Path
+
     from regrender.main_probe import _render_command
     cmd = _render_command(Path('p.csv'), 'coronal', shanks=[1, 2],
                           shank_colors={1: 'red', 2: 'blue'},
@@ -156,6 +156,7 @@ def test_render_command_per_shank_and_region_colors():
 
 def test_render_command_theoretical_track():
     from pathlib import Path
+
     from regrender.main_probe import _render_command
     cmd = _render_command(Path('p.csv'), 'coronal', shanks=[1], shank_colors={},
                           region_colors={}, depth=4000, interval=250)

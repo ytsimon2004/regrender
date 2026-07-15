@@ -15,8 +15,15 @@ from neuralib.util.verbose import fprint
 
 from regrender._app import TerminalLog
 from regrender._core import (
-    boundary_mask, estimate_transform, load_transform, read_oriented,
-    region_name, rotate, save_transform, to_uint8, apply_transformation
+    apply_transformation,
+    boundary_mask,
+    estimate_transform,
+    load_transform,
+    read_oriented,
+    region_name,
+    rotate,
+    save_transform,
+    to_uint8,
 )
 
 __all__ = ['RegisterOptions']
@@ -106,7 +113,14 @@ class RegisterOptions(AbstractParser):
     def _launch_napari(self, ref_view, atlas_w: int, out_dir: Path, name: str,
                        load: dict | None = None, files: list[Path] | None = None):
         import napari
-        from magicgui.widgets import CheckBox, ComboBox, Container, Label, PushButton, SpinBox
+        from magicgui.widgets import (
+            CheckBox,
+            ComboBox,
+            Container,
+            Label,
+            PushButton,
+            SpinBox,
+        )
         from matplotlib.colors import to_rgb
         from napari.utils import Colormap
 
@@ -328,7 +342,7 @@ class RegisterOptions(AbstractParser):
                    if 0 <= y < ann.shape[0] and 0 <= x < ann.shape[1] else 0)
             if rid != state['hover_id']:
                 state['hover_id'] = rid
-                # ponytail: full-plane mask (~1e6 px), recomputed only when crossing a region edge
+                # full-plane mask (~1e6 px), recomputed only when crossing a region edge
                 highlight_layer.data = (ann == rid).astype(float) if rid else np.zeros(ann.shape)
 
         def collect() -> tuple[np.ndarray, np.ndarray]:

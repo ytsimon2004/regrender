@@ -10,9 +10,17 @@ from neuralib.atlas.ccf.matrix import slice_transform_helper
 from neuralib.atlas.util import ALLEN_CCF_10um_BREGMA
 from neuralib.util.verbose import fprint
 
-from regrender._core import (boundary_mask, ccf_mm_to_plane_point, ccf_mm_to_voxel, load_transform,
-                        plane_point_to_ccf_mm, read_oriented, rotate, shank_distances)
 from regrender._app import RegionPicker, SliceReconstructOptions
+from regrender._core import (
+    boundary_mask,
+    ccf_mm_to_plane_point,
+    ccf_mm_to_voxel,
+    load_transform,
+    plane_point_to_ccf_mm,
+    read_oriented,
+    rotate,
+    shank_distances,
+)
 
 __all__ = ['ProbeOptions']
 
@@ -101,8 +109,15 @@ class ProbeOptions(SliceReconstructOptions):
 
     def _launch_napari(self, files: list[Path]):
         import napari
+        from magicgui.widgets import (
+            CheckBox,
+            ComboBox,
+            Container,
+            Label,
+            PushButton,
+            SpinBox,
+        )
         from napari.utils import Colormap
-        from magicgui.widgets import CheckBox, ComboBox, Container, Label, PushButton, SpinBox
 
         viewer = napari.Viewer(title='regrender probe')
         viewer.text_overlay.visible = True
