@@ -1,0 +1,26 @@
+name: Publish to PyPI
+
+# Publishes when you cut a GitHub Release. Tag the release to match the
+# version in pyproject.toml (e.g. v0.1.0).
+on:
+  release:
+    types: [published]
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write  # trusted publishing (OIDC) — no API token needed
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      # fail early if the release tag (e.g. v0.1.0) doesn't match pyproject's version
+      - name: Check tag matches version
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          pkg=$(grep '^version = ' pyproject.toml | cut -d'"' -f2)
+          echo "tag=$tag pkg=$pkg"
+          [ "$tag" = "$pkg" ] || { echo "tag $tag != pyproject version $pkg"; exit 1; }
+      - run: uv build
+      - uses: pypa/gh-action-pypi-publish@release/v1
