@@ -19,9 +19,8 @@ from argclz import argument
 from brainglobe_atlasapi import BrainGlobeAtlas
 from neuralib.atlas.ccf.matrix import slice_transform_helper
 from neuralib.atlas.util import ALLEN_CCF_10um_BREGMA
-from neuralib.util.verbose import fprint
 
-from regrender._app import RegionPicker, SliceReconstructOptions
+from regrender._app import RegionPicker, SliceReconstructOptions, printf
 from regrender._core import (
     boundary_mask,
     load_transform,
@@ -156,7 +155,7 @@ class RoiOptions(SliceReconstructOptions):
     def _project_and_save(self, rows, get_views, structures, status=None):
         """Shared projection: raw rows -> combined CCF csv. Returns ``(path, ccf_rows)`` or ``None``."""
         ccf_rows, missing = project_raw_rois(rows, get_views, structures, self._transform_for)
-        msg = lambda m: status.__setattr__('value', m) if status is not None else fprint(m)
+        msg = lambda m: status.__setattr__('value', m) if status is not None else printf(m)
         if missing:
             msg(f'no registration for slice(s): {", ".join(sorted(set(missing)))} — register them first')
         if not ccf_rows:
@@ -191,7 +190,7 @@ class RoiOptions(SliceReconstructOptions):
             ch_color = {**_CH_COLOR, 'merge': self.roi_color}
             self.launch_render(_render_argv(ch_files, self.roi_radius, ch_color, {},
                                             SHADER_STYLES[0], False, 'both'))
-            fprint(f'rendering {len(ch_files)} channel(s) in a separate window...')
+            printf(f'rendering {len(ch_files)} channel(s) in a separate window...')
 
     def _launch_napari(self, files: list[Path]):
         import napari
@@ -482,7 +481,7 @@ class RoiOptions(SliceReconstructOptions):
             load_csv_points(self._out)  # auto-resume the session csv
         refresh_summary()
 
-        fprint('roi: click cells on raw slices, Save, then Project + Render after registering')
+        printf('roi: click cells on raw slices, Save, then Project + Render after registering')
         napari.run()
 
 

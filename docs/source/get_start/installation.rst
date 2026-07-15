@@ -84,3 +84,17 @@ After any of the above, verify that ``regrender`` is available:
 .. code-block:: bash
 
     regrender --help
+
+Download the atlas
+------------------
+
+regrender uses the Allen CCF atlas, which BrainGlobe/neuralib fetches automatically the first
+time you run ``register``, ``roi``, or ``probe`` (this may take a few minutes). To pull it ahead
+of time so the first real command doesn't stall:
+
+.. code-block:: bash
+
+    regrender setup
+
+This fetches the 10 µm Allen mouse atlas (what regrender is built around). It's a no-op if the
+atlas is already cached.

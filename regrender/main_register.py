@@ -11,9 +11,8 @@ from brainglobe_atlasapi import BrainGlobeAtlas
 from neuralib.atlas.ccf.matrix import SLICE_DIMENSION_10um
 from neuralib.atlas.typing import PLANE_TYPE
 from neuralib.atlas.view import get_slice_view
-from neuralib.util.verbose import fprint
 
-from regrender._app import TerminalLog
+from regrender._app import TerminalLog, printf
 from regrender._core import (
     apply_transformation,
     boundary_mask,
@@ -631,7 +630,7 @@ class RegisterOptions(AbstractParser):
         viewer.window.add_dock_widget(
             scroll, area='right', name='register'
         )
-        fprint(f'registering {name}: pick points, Preview to verify, Save when done')
+        printf(f'registering {name}: pick points, Preview to verify, Save when done')
         napari.run()
 
 

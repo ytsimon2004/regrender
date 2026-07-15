@@ -19,7 +19,7 @@ from neuralib.atlas.view import get_slice_view
 
 from regrender._core import region_name
 
-__all__ = ['SliceReconstructOptions', 'RegionPicker', 'TerminalLog']
+__all__ = ['SliceReconstructOptions', 'RegionPicker', 'TerminalLog', 'printf']
 
 _IMG_EXT = {'.tif', '.tiff', '.png', '.jpg', '.jpeg'}
 
@@ -35,6 +35,44 @@ def _console():
 
 _CONSOLE = None
 
+# level -> (panel HTML hex, rich terminal style)
+_LEVEL_STYLE = {
+    'error': ('#ff6b6b', 'bold red'),
+    'warning': ('#f2c14e', 'yellow'),
+    'save': ('#8bd450', 'green'),
+    'io': ('#56b6c2', 'cyan'),
+    'info': ('#d0d0d0', ''),
+}
+
+
+def _infer_level(msg: str) -> str:
+    m = str(msg).lower()
+    if any(k in m for k in ('fail', 'error', 'cannot', "n't", 'invalid')):
+        return 'error'
+    if any(k in m for k in ('missing', 'cancel', 'no points', 'nothing', 'not ', 'stale')):
+        return 'warning'
+    if any(k in m for k in ('saved', 'save', '->', 'wrote', 'written')):
+        return 'save'
+    if any(k in m for k in ('load', 'render', 'resum', 'projected')):
+        return 'io'
+    return 'info'
+
+
+def printf(msg: str, level: str | None = None) -> None:
+    """Consistent timestamped terminal output (rich). The single path for every terminal line —
+    CLI messages and the napari status mirror both go through here, so they read the same.
+    Level (hence color) is inferred from the text unless passed explicitly."""
+    from datetime import datetime
+
+    from rich.text import Text
+
+    msg = str(msg)
+    _, style = _LEVEL_STYLE[level or _infer_level(msg)]
+    line = Text()
+    line.append(datetime.now().strftime('%H:%M:%S') + ' ', style='dim')
+    line.append(msg, style=style)  # append is literal — no markup injection from msg
+    _console().print(line)
+
 
 class TerminalLog:
     """Append-only rich-console view over a magicgui Label: ``status.value = msg`` appends a
@@ -42,39 +80,18 @@ class TerminalLog:
     keeping the last ``maxlines`` messages. Level (hence color) is inferred from the message;
     pass it explicitly with ``log.log(msg, 'error')`` when the heuristic isn't enough."""
 
-    # level -> (panel HTML hex, rich terminal style)
-    _COLORS = {
-        'error': ('#ff6b6b', 'bold red'),
-        'warning': ('#f2c14e', 'yellow'),
-        'save': ('#8bd450', 'green'),
-        'io': ('#56b6c2', 'cyan'),
-        'info': ('#d0d0d0', '')
-    }
-
     def __init__(self, label, maxlines: int = 200, echo: bool = True):
         self._label = label
         self._lines: deque[str] = deque(maxlen=maxlines)
         self._echo = echo  # also mirror each line to the terminal (persistent, copyable log)
-
-    @staticmethod
-    def _infer(msg: str) -> str:
-        m = msg.lower()
-        if any(k in m for k in ('fail', 'error', 'cannot', "n't", 'invalid')):
-            return 'error'
-        if any(k in m for k in ('missing', 'cancel', 'no points', 'nothing', 'not ', 'stale')):
-            return 'warning'
-        if any(k in m for k in ('saved', 'save', '->', 'wrote', 'written')):
-            return 'save'
-        if any(k in m for k in ('load', 'render', 'resum', 'projected')):
-            return 'io'
-        return 'info'
 
     def log(self, msg: str, level: str | None = None):
         import html
         from datetime import datetime
 
         msg = str(msg)
-        hexc, style = self._COLORS.get(level or self._infer(msg), self._COLORS['info'])
+        level = level or _infer_level(msg)
+        hexc, _ = _LEVEL_STYLE[level]
         ts = datetime.now().strftime('%H:%M:%S')
 
         self._lines.append(
@@ -83,12 +100,8 @@ class TerminalLog:
         )
         self._label.value = '<br>'.join(self._lines)
 
-        if self._echo:  # mirror to terminal via rich (auto-strips color when piped)
-            from rich.text import Text
-            line = Text()
-            line.append(ts + ' ', style='dim')
-            line.append(msg, style=style)  # append is literal — no markup injection from msg
-            _console().print(line)
+        if self._echo:  # mirror to terminal via the shared printer
+            printf(msg, level)
 
     @property
     def value(self) -> str:

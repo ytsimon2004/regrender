@@ -8,9 +8,8 @@ from argclz import argument
 from brainglobe_atlasapi import BrainGlobeAtlas
 from neuralib.atlas.ccf.matrix import slice_transform_helper
 from neuralib.atlas.util import ALLEN_CCF_10um_BREGMA
-from neuralib.util.verbose import fprint
 
-from regrender._app import RegionPicker, SliceReconstructOptions
+from regrender._app import RegionPicker, SliceReconstructOptions, printf
 from regrender._core import (
     boundary_mask,
     ccf_mm_to_plane_point,
@@ -695,7 +694,7 @@ class ProbeOptions(SliceReconstructOptions):
             load_csv_points(self._out)  # auto-resume the session CSV
         refresh_summary()
 
-        fprint('probe: pick superficial+deep dye per shank (step slices as needed), then Render')
+        printf('probe: pick superficial+deep dye per shank (step slices as needed), then Render')
         napari.run()
 
 
