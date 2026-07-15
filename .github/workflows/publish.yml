@@ -1,10 +1,11 @@
 name: Publish to PyPI
 
-# Publishes when you cut a GitHub Release. Tag the release to match the
-# version in pyproject.toml (e.g. v0.1.0).
+# Publishes on a version tag push (e.g. `git push origin v0.1.0`).
+# The tag must match the version in pyproject.toml (checked below).
 on:
-  release:
-    types: [published]
+  push:
+    tags:
+      - "v*"
 
 jobs:
   publish:
