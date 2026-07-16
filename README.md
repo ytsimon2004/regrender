@@ -12,6 +12,9 @@ A napari-based Python toolkit
 For registering histological brain slices to the Allen Brain Atlas, annotating cells/ROIs,
 reconstructing probe tracks, and rendering the results with brainrender.
 
+> [!TIP]
+> **Full documentation: [regrender documentation](https://regrender.readthedocs.io)**
+
 ## Features
 
 - **Interactive slice→CCF registration** (`regrender register`) — pick landmark pairs in napari, estimate a homography/affine transform.
