@@ -562,8 +562,15 @@ class ProbeOptions(SliceReconstructOptions):
                 # mark the ventral dye point + its euclidean distance from dorsal
                 ax.plot([xi - 0.4, xi + 0.4], [v[1], v[1]], color='k', linestyle='--', linewidth=0.8)
                 ax.text(xi + 0.42, v[1], f'v {length:.2f} mm', ha='left', va='center', fontsize=6)
+            # per-shank in-plane-fixed coordinate: sagittal sections fix ML (so AP separates
+            # shanks), coronal sections fix AP (so ML separates them). show dorsal & ventral.
+            caxis, clabel = {'sagittal': (0, 'AP'), 'coronal': (2, 'ML')}.get(state['plane'], (None, None))
             ax.set_xticks(range(len(tracks)))
-            ax.set_xticklabels([f'shank {s}' for s, *_ in tracks])
+            if caxis is None:
+                ax.set_xticklabels([f'shank {s}' for s, *_ in tracks])
+            else:
+                ax.set_xticklabels([f'shank {s}\n{clabel} d {d[caxis]:+.2f} / v {v[caxis]:+.2f} mm'
+                                    for s, _runs, d, v, _len in tracks])
             ax.set_ylabel('DV from bregma (mm)   ·   left ticks = mm from dorsal (euclidean)')
             ax.set_title('Probe region profile' + ('  (// = extrapolated to depth)' if self.depth else ''))
             ax.invert_yaxis()  # dorsal (smaller DV) at top
