@@ -204,7 +204,9 @@ class SliceReconstructOptions(AbstractParser):
     def _resolve_paths(self, default_csv: str, *, require_transform: bool = True) -> list[Path]:
         """Common run() prologue: resolve image(s), transform dir, output csv. Returns the file list.
 
-        ``require_transform=False`` for modes that label before registration exists (roi)."""
+        ``require_transform=False`` for modes that label before registration exists (roi).
+        With a folder (``-D``), unregistered slices are skipped with a warning (only an error if
+        none are registered); a single ``-I`` image without a transform is still a hard error."""
         files = self._list_images(self.directory) if self.directory else []
         if files and self.raw_image is None:
             self.raw_image = files[0]
@@ -213,10 +215,25 @@ class SliceReconstructOptions(AbstractParser):
         base = self.raw_image.parent
         self._tdir = self.transform_dir or base / 'transformations'
         self._out = self.output or base / default_csv
-        if require_transform and not self._transform_path(self.raw_image).exists():
-            raise FileNotFoundError(
-                f'no native registration {self._transform_path(self.raw_image)} — '
-                f'register with `regrender register` first')
+        if require_transform:
+            if files:  # folder mode: drop unregistered slices, keep going with the registered ones
+                registered = [f for f in files if self._transform_path(f).exists()]
+                missing = [f for f in files if not self._transform_path(f).exists()]
+                if missing:
+                    printf(f'skipping {len(missing)} unregistered slice(s): '
+                           f'{", ".join(m.stem for m in missing)} — register them with '
+                           f'`regrender register`', 'warning')
+                if not registered:
+                    raise FileNotFoundError(
+                        f'no registered slices in {self._tdir} — register with '
+                        f'`regrender register` first')
+                files = registered
+                if not self._transform_path(self.raw_image).exists():
+                    self.raw_image = registered[0]  # start on a slice that actually has a transform
+            elif not self._transform_path(self.raw_image).exists():  # single -I image
+                raise FileNotFoundError(
+                    f'no native registration {self._transform_path(self.raw_image)} — '
+                    f'register with `regrender register` first')
         return files
 
     # --- shared napari helpers --------------------------------------------------
