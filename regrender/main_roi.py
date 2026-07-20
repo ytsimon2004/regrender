@@ -426,6 +426,27 @@ class RoiOptions(SliceReconstructOptions):
             state['cursor'] = int(np.clip(state['cursor'] + delta, 0, len(files) - 1))
             load_slice(files[state['cursor']])
 
+        def on_files_loaded(files):
+            # switching image/folder is a new session: drop whatever ROIs were loaded before
+            state['rois'].clear()
+            state['shapes'].clear()
+            state['next_id'] = 1
+            refresh_summary()
+            state['files'] = files
+            state['cursor'] = 0
+            if files:
+                load_slice(files[0])
+            elif self.raw_image:
+                load_slice(self.raw_image)
+            else:
+                status.value = 'no slice loaded'
+            if self._out.exists():  # resume this folder's saved raw-ROI csv, same as CLI -D
+                load_csv_points(self._out)
+
+        load_img_btn, load_dir_btn = self.make_load_buttons(
+            default_csv='roi/roi_points_raw.csv', status=status, on_loaded=on_files_loaded,
+            require_transform=False)
+
         pan_w = CheckBox(label='Pan (left-drag moves slice)', value=False)
         pan_w.changed.connect(lambda *_: setattr(viewer.camera, 'mouse_pan', pan_w.value)
                               if not state['verify'] else None)
@@ -451,12 +472,12 @@ class RoiOptions(SliceReconstructOptions):
 
         def on_load_csv():
             from qtpy.QtWidgets import QFileDialog
-            path, _ = QFileDialog.getOpenFileName(caption='Load raw-ROI CSV',
+            path, _ = QFileDialog.getOpenFileName(caption='Append raw-ROI CSV',
                                                   filter='CSV (*.csv);;All files (*)')
             if path:
                 load_csv_points(Path(path))
 
-        load_btn = PushButton(text='Load CSV')
+        load_btn = PushButton(text='Append CSV')
         load_btn.changed.connect(lambda *_: on_load_csv())
         save_btn = PushButton(text='Save CSV')
         save_btn.changed.connect(lambda *_: save_csv())
@@ -464,7 +485,8 @@ class RoiOptions(SliceReconstructOptions):
         project_btn.changed.connect(lambda *_: on_project())
 
         panel = Container(widgets=[
-            self.header('Slice'), slice_lbl, self.srow(prev_btn, next_btn), verify_w,
+            self.header('Slice'), slice_lbl, self.srow(load_img_btn, load_dir_btn),
+            self.srow(prev_btn, next_btn), verify_w,
             self.header('ROIs'), summary, undo_btn, pan_w, channel_w, color_w,
             self.header('Regions'), *regions.widgets,
             self.header('Render'), self.srow(style_w, hemisphere_w), camera_w, no_root_w, project_btn,

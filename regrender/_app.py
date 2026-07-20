@@ -177,11 +177,13 @@ class SliceReconstructOptions(AbstractParser):
 
     directory: Path | None = argument(
         '-D', '--directory', default=None,
-        help='folder of serial sections (steps through them; reads transformations/<stem>_transform.json)'
+        help='folder of serial sections (steps through them; reads transformations/<stem>_transform.json); '
+             'optional, can also load it from the GUI'
     )
 
     raw_image: Path | None = argument(
-        '-I', '--image', default=None, help='single registered histology image (alternative to -D)'
+        '-I', '--image', default=None,
+        help='single registered histology image (alternative to -D); optional, can also load it from the GUI'
     )
 
     transform_dir: Path | None = argument(
@@ -201,24 +203,30 @@ class SliceReconstructOptions(AbstractParser):
     def _transform_path(self, img: Path) -> Path:
         return self._tdir / f'{img.stem}_transform.json'
 
+    def _split_registered(self, files: list[Path]) -> tuple[list[Path], list[Path]]:
+        registered = [f for f in files if self._transform_path(f).exists()]
+        missing = [f for f in files if not self._transform_path(f).exists()]
+        return registered, missing
+
     def _resolve_paths(self, default_csv: str, *, require_transform: bool = True) -> list[Path]:
         """Common run() prologue: resolve image(s), transform dir, output csv. Returns the file list.
 
         ``require_transform=False`` for modes that label before registration exists (roi).
         With a folder (``-D``), unregistered slices are skipped with a warning (only an error if
-        none are registered); a single ``-I`` image without a transform is still a hard error."""
+        none are registered); a single ``-I`` image without a transform is still a hard error.
+        Neither ``-I`` nor ``-D`` given is not an error: the GUI launches bare and the user picks
+        an image/folder from its own Load buttons (see ``make_load_buttons``)."""
         files = self._list_images(self.directory) if self.directory else []
         if files and self.raw_image is None:
             self.raw_image = files[0]
-        if self.raw_image is None:
-            raise ValueError('provide an image via -I/--image or a folder via -D/--directory')
-        base = self.raw_image.parent
+        base = self.raw_image.parent if self.raw_image else (self.directory or Path.cwd())
         self._tdir = self.transform_dir or base / 'transformations'
         self._out = self.output or base / default_csv
+        if self.raw_image is None:
+            return files
         if require_transform:
             if files:  # folder mode: drop unregistered slices, keep going with the registered ones
-                registered = [f for f in files if self._transform_path(f).exists()]
-                missing = [f for f in files if not self._transform_path(f).exists()]
+                registered, missing = self._split_registered(files)
                 if missing:
                     printf(f'skipping {len(missing)} unregistered slice(s): '
                            f'{", ".join(m.stem for m in missing)} — register them with '
@@ -235,6 +243,58 @@ class SliceReconstructOptions(AbstractParser):
                     f'no native registration {self._transform_path(self.raw_image)} — '
                     f'register with `regrender register` first')
         return files
+
+    def make_load_buttons(self, *, default_csv: str, status, on_loaded, require_transform: bool = True):
+        """'Load image' / 'Load dir' buttons for picking input from inside an already-open GUI —
+        the same resolution ``_resolve_paths`` does at startup, so ``regrender probe``/``roi`` can
+        launch with no ``-I``/``-D`` at all. ``on_loaded(files)`` runs after ``self.raw_image`` /
+        ``self.directory`` / ``self._tdir`` / ``self._out`` are refreshed (``files`` empty for a
+        single image)."""
+        from magicgui.widgets import PushButton
+        from qtpy.QtWidgets import QFileDialog
+
+        def set_base(img: Path | None, directory: Path | None):
+            self.raw_image, self.directory = img, directory
+            base = img.parent if img else (directory or Path.cwd())
+            self._tdir = self.transform_dir or base / 'transformations'
+            self._out = self.output or base / default_csv
+
+        def on_load_image():
+            path, _ = QFileDialog.getOpenFileName(
+                caption='Load histology image',
+                filter='Images (*.tif *.tiff *.png *.jpg *.jpeg);;All files (*)')
+            if not path:
+                return
+            img = Path(path)
+            set_base(img, None)
+            if require_transform and not self._transform_path(img).exists():
+                status.value = f'no registration for {img.name} — register it with `regrender register` first'
+                return
+            on_loaded([])
+
+        def on_load_dir():
+            d = QFileDialog.getExistingDirectory(caption='Load serial-section folder')
+            if not d:
+                return
+            set_base(None, Path(d))  # _tdir must point at this folder before checking registration
+            files = self._list_images(Path(d))
+            if require_transform:
+                files, missing = self._split_registered(files)
+                if missing:
+                    status.value = f'skipping {len(missing)} unregistered slice(s)'
+            if not files:
+                status.value = (f'no registered images in {Path(d).name} — its transformations/ '
+                                f'must hold each image\'s *_transform.json' if require_transform
+                                else 'no images found in folder')
+                return
+            set_base(files[0], Path(d))
+            on_loaded(files)
+
+        load_btn = PushButton(text='Load image')
+        load_btn.changed.connect(lambda *_: on_load_image())
+        load_dir_btn = PushButton(text='Load dir (serial)')
+        load_dir_btn.changed.connect(lambda *_: on_load_dir())
+        return load_btn, load_dir_btn
 
     # --- shared napari helpers --------------------------------------------------
 

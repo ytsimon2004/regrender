@@ -436,8 +436,12 @@ class ProbeOptions(SliceReconstructOptions):
             if not {ap_c, dv_c, ml_c, 'probe_idx', 'point'} <= cols:
                 status.value = f'{path.name}: not a probe CSV (needs ap_mm/dv_mm/ml_mm, probe_idx, point)'
                 return
+            # offset this file's shank numbers past whatever's already loaded, so batch-loading
+            # several CSVs accumulates shanks instead of colliding on matching probe_idx
+            existing = {s for s, _ in state['pts']}
+            offset = max(existing) if existing else 0
             for r in df.iter_rows(named=True):
-                key = (int(r['probe_idx']), r['point'])
+                key = (int(r['probe_idx']) + offset, r['point'])
                 state['pts'][key] = (r[ap_c], r[dv_c], r[ml_c])
                 state['src'][key] = r.get('source', '') or ''  # column optional on older CSVs
             refresh_summary()
@@ -664,16 +668,32 @@ class ProbeOptions(SliceReconstructOptions):
 
         view_w.changed.connect(on_mode)
 
+        def on_files_loaded(files):
+            # switching image/folder is a new session: drop whatever points/colors were loaded before
+            state['pts'].clear()
+            state['src'].clear()
+            shank_colors.clear()
+            refresh_summary()
+            state['files'] = files
+            state['cursor'] = 0
+            view_w.value = 'single'
+            refresh_view()
+            if self._out.exists():  # resume this folder's saved probe_shanks.csv, same as CLI -D
+                load_csv_points(self._out)
+
+        load_img_btn, load_dir_btn = self.make_load_buttons(
+            default_csv='probe/probe_shanks.csv', status=status, on_loaded=on_files_loaded)
+
         def on_load_csv():
             from qtpy.QtWidgets import QFileDialog
-            path, _ = QFileDialog.getOpenFileName(caption='Load probe points CSV',
-                                                  filter='CSV (*.csv);;All files (*)')
-            if path:
+            paths, _ = QFileDialog.getOpenFileNames(caption='Append probe points CSV(s)',
+                                                     filter='CSV (*.csv);;All files (*)')
+            for path in paths:  # load_csv_points merges by (probe_idx, point), so this appends
                 load_csv_points(Path(path))
 
         invert_btn = PushButton(text='Invert ML (flip hemisphere)')
         invert_btn.changed.connect(lambda *_: invert_ml())
-        load_btn = PushButton(text='Load CSV')
+        load_btn = PushButton(text='Append CSV')
         load_btn.changed.connect(lambda *_: on_load_csv())
         save_btn = PushButton(text='Save CSV')
         save_btn.changed.connect(lambda *_: save_csv())
@@ -683,7 +703,8 @@ class ProbeOptions(SliceReconstructOptions):
         profile_btn.changed.connect(lambda *_: region_profile())
 
         panel = Container(widgets=[
-            self.header('Slice'), slice_lbl, view_w, self.srow(prev_btn, next_btn),
+            self.header('Slice'), slice_lbl, self.srow(load_img_btn, load_dir_btn),
+            view_w, self.srow(prev_btn, next_btn),
             self.header('Dye point'), shank_w, mark_w, channel_w, probe_color_w,
             self.header('Accumulated'), summary, invert_btn,
             self.header('Regions'), *regions.widgets, profile_btn,
