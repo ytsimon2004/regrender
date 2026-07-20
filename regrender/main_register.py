@@ -268,6 +268,7 @@ class RegisterOptions(AbstractParser):
             renumber(slice_pts)
             state['expect'] = 'atlas' if len(atlas_pts.data) == 0 else (
                 'slice' if len(atlas_pts.data) > len(slice_pts.data) else 'atlas')
+            preview_w.value = False  # old preview was warped from the pre-rotation image; drop it
             status.value = f'rotated {rot_w.value}° — re-pick the slice points'
 
         rot_w.changed.connect(set_rotation)
@@ -280,6 +281,7 @@ class RegisterOptions(AbstractParser):
             slice_pts.data = np.empty((0, 2))  # slice points are stale once the image flips
             renumber(slice_pts)
             state['expect'] = 'atlas' if len(atlas_pts.data) == len(slice_pts.data) else 'slice'
+            preview_w.value = False  # old preview was warped from the pre-flip image; drop it
             status.value = 'flipped — re-pick the slice points'
 
         flip_lr_w.changed.connect(set_flip)
@@ -444,6 +446,7 @@ class RegisterOptions(AbstractParser):
                 renumber(layer)
             state['expect'] = 'atlas'
             sync_orient_lock()
+            preview_w.value = False  # points are gone; old preview no longer matches them
             status.value = 'cleared all points'
 
         def on_reregister():
