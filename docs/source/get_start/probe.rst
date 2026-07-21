@@ -23,6 +23,12 @@ Workflow
 
 Each slice's ``*_transform.json`` is loaded and the histology is re-warped into atlas space.
 
+0. If you didn't pass ``-I``/``-D``, use **Load image** / **Load dir (serial)** in the GUI.
+   Loading a new image/folder starts a fresh session (clears any picked points) and
+   auto-resumes that folder's saved ``probe_shanks.csv`` if one exists. Use **Append CSV** to
+   merge one or more additional points CSVs into the current session instead — each file's
+   shank numbers are offset past whatever's already loaded, so batch-loading several probes'
+   CSVs accumulates shanks rather than colliding.
 1. Step through serial sections and, for each shank, click the **superficial (dorsal)** and
    **deep (ventral)** dye point. Each click is converted to bregma-relative CCF (AP, DV, ML) mm.
 2. Assign per-shank colors, optionally pick atlas region meshes to render, and flip the ML
@@ -59,9 +65,10 @@ Options
    * - Option
      - Meaning
    * - ``-D``, ``--directory``
-     - Folder of serial sections (reads ``transformations/<stem>_transform.json``).
+     - Folder of serial sections (reads ``transformations/<stem>_transform.json``); optional,
+       can also load from the GUI.
    * - ``-I``, ``--image``
-     - Single registered image (alternative to ``-D``).
+     - Single registered image (alternative to ``-D``); optional, can also load from the GUI.
    * - ``--transform-dir``
      - Where the ``*_transform.json`` live (default ``<dir>/transformations``).
    * - ``-O``, ``--output``
