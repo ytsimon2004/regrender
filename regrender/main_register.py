@@ -8,7 +8,6 @@ import imageio.v3 as iio
 import numpy as np
 from argclz import AbstractParser, argument
 from brainglobe_atlasapi import BrainGlobeAtlas
-from natsort import natsorted
 from neuralib.atlas.ccf.matrix import SLICE_DIMENSION_10um
 from neuralib.atlas.typing import PLANE_TYPE
 from neuralib.atlas.view import get_slice_view
@@ -77,7 +76,7 @@ class RegisterOptions(AbstractParser):
         self._oriented = None
 
     def _list_images(self, d: Path) -> list[Path]:
-        return natsorted(p for p in Path(d).iterdir() if p.suffix.lower() in self._IMG_EXT)
+        return sorted(p for p in Path(d).iterdir() if p.suffix.lower() in self._IMG_EXT)
 
     def run(self):
         if self.cut_plane not in SLICE_DIMENSION_10um:
