@@ -19,7 +19,7 @@ classifiers = [
 dependencies = [
     "argclz>=1.0.1",
     "neuralib-atlas[brainrender]>=0.7.3",
-    "napari[pyqt5]",
+    "napari[pyqt6]>=0.10",
     "imageio",
     "rich",
 ]
@@ -70,3 +70,14 @@ ignore_missing_imports = true  # napari/brainrender/magicgui ship no stubs
 [[tool.mypy.overrides]]
 module = ["regrender._app", "regrender.main_register"]
 ignore_errors = true
+
+[tool.pytest.ini_options]
+markers = [
+    "gui: launches the napari GUI (needs a display with OpenGL); deselect with -m 'not gui'",
+]
+
+# PyQt6's shipped .pyi stubs contain a syntax error mypy can't parse; we only use Qt via qtpy anyway
+[[tool.mypy.overrides]]
+module = ["PyQt6", "PyQt6.*"]
+follow_imports = "skip"
+follow_imports_for_stubs = true

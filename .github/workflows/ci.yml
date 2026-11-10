@@ -4,6 +4,11 @@ on:
   push:
     branches: [main]
   pull_request:
+  # upstream releases (napari, Qt, brainglobe, ...) can break a fresh install without any
+  # push from us -- re-check against the newest dependencies every Monday
+  schedule:
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
 
 jobs:
   lint:
@@ -11,19 +16,68 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
-      - run: uvx ruff check .
-      - run: uvx mypy regrender/
+      # linters come from uv.lock so a new ruff/mypy release can't fail CI on its own
+      - run: uv sync --extra lint --locked
+      - run: uv run ruff check .
+      - run: uv run mypy regrender/
 
   test:
-    runs-on: ubuntu-latest
+    name: test (${{ matrix.os }}, ${{ matrix.deps }} deps)
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        # locked = uv.lock (reproducible dev env)
+        # latest = newest releases, i.e. what `pip install regrender` gets today
+        deps: [locked, latest]
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
         with:
           python-version: "3.12"
-      # napari import needs a display + Qt/OpenGL system libs
+      # napari needs a real display with OpenGL + Qt's xcb system libs (no-op on macOS)
       - uses: pyvista/setup-headless-display-action@v3
-      - run: uv sync --extra test
-      - run: uv run pytest -q
-        env:
-          QT_QPA_PLATFORM: offscreen
+        with:
+          qt: true
+
+      - name: Install (locked)
+        if: matrix.deps == 'locked'
+        run: uv sync --extra test --locked  # also fails if uv.lock is stale vs pyproject
+      - name: Install (latest)
+        if: matrix.deps == 'latest'
+        run: uv sync --extra test --upgrade
+
+      - run: uv pip list | grep -iE "^(napari|pyqt|qtpy|vispy|magicgui|brainglobe)"
+
+      # the launch smoke test swaps the 6.7 GB 10 um atlas for the small 100 um one
+      # (61 MB download; cached, so normally only the first run hits the GIN server)
+      # restore/save split (not plain actions/cache): plain cache only saves if the whole
+      # job passes, so a failing test would throw the download away every time
+      - uses: actions/cache/restore@v4
+        id: atlas-cache
+        with:
+          path: ~/.brainglobe
+          key: brainglobe-allen_mouse_100um-v1
+      - name: Fetch test atlas
+        if: steps.atlas-cache.outputs.cache-hit != 'true'
+        timeout-minutes: 15  # GIN can hang; fail clearly here instead of stalling the job
+        shell: bash
+        run: |
+          for i in 1 2 3; do
+            uv run python -c "
+          import brainglobe_atlasapi.bg_atlas as b, brainglobe_atlasapi.utils as u
+          f = u.check_gin_status
+          b.check_gin_status = lambda *a, **k: f(timeout=60)  # GIN is often slower than the 5 s default
+          b.BrainGlobeAtlas('allen_mouse_100um', check_latest=False)
+          " && exit 0
+            echo "attempt $i failed, retrying..."; sleep 30
+          done
+          exit 1
+      - uses: actions/cache/save@v4
+        if: steps.atlas-cache.outputs.cache-hit != 'true'
+        with:
+          path: ~/.brainglobe
+          key: brainglobe-allen_mouse_100um-v1
+
+      - run: uv run pytest -v
