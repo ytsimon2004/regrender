@@ -3735,6 +3735,7 @@ version = "0.1.1"
 source = { editable = "." }
 dependencies = [
     { name = "argclz" },
+    { name = "brainglobe-atlasapi" },
     { name = "imageio" },
     { name = "napari", extra = ["pyqt6"] },
     { name = "neuralib-atlas", extra = ["brainrender"] },
@@ -3758,6 +3759,7 @@ test = [
 [package.metadata]
 requires-dist = [
     { name = "argclz", specifier = ">=1.0.1" },
+    { name = "brainglobe-atlasapi", specifier = ">=2.3,<3" },
     { name = "imageio" },
     { name = "mypy", marker = "extra == 'lint'" },
     { name = "napari", extras = ["pyqt6"], specifier = ">=0.10" },

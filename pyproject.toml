@@ -20,6 +20,9 @@ dependencies = [
     "argclz>=1.0.1",
     "neuralib-atlas[brainrender]>=0.7.3",
     "napari[pyqt6]>=0.10",
+    # 3.x moved atlases to OME-Zarr/S3 with a new cache layout (existing ~/.brainglobe atlases
+    # are not found); untested with neuralib + the apps, so stay on 2.x until migrated
+    "brainglobe-atlasapi>=2.3,<3",
     "imageio",
     "rich",
 ]
