@@ -17,7 +17,13 @@ import pytest
 
 napari = pytest.importorskip('napari')
 
-pytestmark = pytest.mark.gui
+pytestmark = [
+    pytest.mark.gui,
+    # deprecated napari/Qt API used from *our* code fails the test, so the weekly latest-deps
+    # run flags it while the old name still works (rather than when it's finally removed)
+    pytest.mark.filterwarnings('error::DeprecationWarning:regrender'),
+    pytest.mark.filterwarnings('error::FutureWarning:regrender'),
+]
 
 SMALL_ATLAS = 'allen_mouse_100um'
 

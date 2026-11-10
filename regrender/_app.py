@@ -339,7 +339,7 @@ class SliceReconstructOptions(AbstractParser):
             if ann is None:
                 return
             y, x = event.position
-            viewer.text_overlay.text = region_name(ann, structures, y, x)
+            viewer.canvas.overlays.text.text = region_name(ann, structures, y, x)
             rid = (int(ann[int(y), int(x)])
                    if 0 <= y < ann.shape[0] and 0 <= x < ann.shape[1] else 0)
             if rid != state.get('hover_id'):
