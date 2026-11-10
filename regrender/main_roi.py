@@ -197,10 +197,10 @@ class RoiOptions(SliceReconstructOptions):
         from magicgui.widgets import CheckBox, ComboBox, Container, Label, PushButton
 
         viewer = napari.Viewer(title='regrender roi')
-        viewer.camera.mouse_pan = False  # left-drag must add ROIs, not pan the slice; scroll still zooms
-        viewer.text_overlay.visible = True  # region name under cursor (verify mode)
-        viewer.text_overlay.font_size = 18
-        viewer.text_overlay.color = 'yellow'
+        viewer.scene.camera.mouse_pan = False  # left-drag must add ROIs, not pan the slice; scroll still zooms
+        viewer.canvas.overlays.text.visible = True  # region name under cursor (verify mode)
+        viewer.canvas.overlays.text.font_size = 18
+        viewer.canvas.overlays.text.color = 'yellow'
 
         bg = BrainGlobeAtlas('allen_mouse_10um', check_latest=False)
         get_views = self.make_view_cache()  # lazy: atlas volumes load only on first Project/Verify
@@ -288,7 +288,7 @@ class RoiOptions(SliceReconstructOptions):
             roi_layer.current_face_color = color  # newly clicked ROIs take the channel color
             reorder()
             select_roi_layer()
-            viewer.camera.mouse_pan = pan_w.value
+            viewer.scene.camera.mouse_pan = pan_w.value
             status.value = (f'{state["path"].name} [{ch}]: click to add cells (scroll=zoom) — '
                             f'{len(rois)} in this channel')
 
@@ -325,7 +325,7 @@ class RoiOptions(SliceReconstructOptions):
             set_crosses(here, cols)
             roi_layer.mode = 'pan_zoom'  # atlas space is read-only
             reorder()
-            viewer.camera.mouse_pan = True
+            viewer.scene.camera.mouse_pan = True
             status.value = f'{state["name"]}: {len(here)} ROI(s) on the transformed slice (verify)'
 
         def display_slice():
@@ -448,7 +448,7 @@ class RoiOptions(SliceReconstructOptions):
             require_transform=False)
 
         pan_w = CheckBox(label='Pan (left-drag moves slice)', value=False)
-        pan_w.changed.connect(lambda *_: setattr(viewer.camera, 'mouse_pan', pan_w.value)
+        pan_w.changed.connect(lambda *_: setattr(viewer.scene.camera, 'mouse_pan', pan_w.value)
                               if not state['verify'] else None)
         verify_w = CheckBox(label='Verify (warped + atlas)', value=False)
         channel_w = ComboBox(label='channel', choices=['merge', 'R', 'G', 'B'], value='merge')

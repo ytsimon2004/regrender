@@ -163,9 +163,9 @@ class RegisterOptions(AbstractParser):
         bcmap = Colormap([[0, 0, 0], list(brgb)], name='boundary')  # 0 -> transparent (additive), 1 -> color
 
         viewer = napari.Viewer(title=f'regrender register — {name}')
-        viewer.text_overlay.visible = True
-        viewer.text_overlay.font_size = 18
-        viewer.text_overlay.color = 'yellow'
+        viewer.canvas.overlays.text.visible = True
+        viewer.canvas.overlays.text.font_size = 18
+        viewer.canvas.overlays.text.color = 'yellow'
         atlas_layer = viewer.add_image(plane_image(), name='atlas', colormap='gray')
         bound_layer = viewer.add_image(boundary_mask(state['ann']), name='boundaries',
                                        colormap=bcmap, blending='additive', opacity=0.9)
@@ -338,7 +338,7 @@ class RegisterOptions(AbstractParser):
         def on_move(_v, event):
             y, x = event.position
             ann = state['ann']
-            viewer.text_overlay.text = region_name(ann, structures, y, x)
+            viewer.canvas.overlays.text.text = region_name(ann, structures, y, x)
             rid = (int(ann[int(y), int(x)])
                    if 0 <= y < ann.shape[0] and 0 <= x < ann.shape[1] else 0)
             if rid != state['hover_id']:

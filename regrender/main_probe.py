@@ -119,9 +119,9 @@ class ProbeOptions(SliceReconstructOptions):
         from napari.utils import Colormap
 
         viewer = napari.Viewer(title='regrender probe')
-        viewer.text_overlay.visible = True
-        viewer.text_overlay.font_size = 18
-        viewer.text_overlay.color = 'yellow'
+        viewer.canvas.overlays.text.visible = True
+        viewer.canvas.overlays.text.font_size = 18
+        viewer.canvas.overlays.text.color = 'yellow'
 
         bg = BrainGlobeAtlas('allen_mouse_10um', check_latest=False)
 

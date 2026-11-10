@@ -21,6 +21,10 @@ Labeling
 
 In the napari GUI:
 
+- If you didn't pass ``-I``/``-D``, use **Load image** / **Load dir (serial)**. Loading a new
+  image/folder starts a fresh session (clears any labeled ROIs) and auto-resumes that folder's
+  saved ``roi_points_raw.csv`` if one exists. Use **Append CSV** to merge additional raw-ROI
+  CSVs into the current session instead.
 - Step through serial sections with Prev/Next.
 - Choose the channel to label (``merge`` / ``R`` / ``G`` / ``B``) for multi-channel images.
 - Click cells to add ROIs; they are saved to ``roi/roi_points_raw.csv`` in **raw pixel** coords.
@@ -52,9 +56,10 @@ Options
    * - Option
      - Meaning
    * - ``-D``, ``--directory``
-     - Folder of serial sections (reads ``transformations/<stem>_transform.json``).
+     - Folder of serial sections (reads ``transformations/<stem>_transform.json``); optional,
+       can also load from the GUI.
    * - ``-I``, ``--image``
-     - Single image (alternative to ``-D``).
+     - Single image (alternative to ``-D``); optional, can also load from the GUI.
    * - ``--transform-dir``
      - Where the ``*_transform.json`` live (default ``<dir>/transformations``).
    * - ``-O``, ``--output``
