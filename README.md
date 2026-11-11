@@ -41,7 +41,8 @@ reconstructing probe tracks, and rendering the results with brainrender.
 
 ```bash
 # Option 1 — one-shot CLI install, no clone or env needed (recommended for users)
-uv tool install git+https://github.com/ytsimon2004/regrender.git
+# (--python 3.12 keeps uv from picking an active conda/system Python < 3.12)
+uv tool install --python 3.12 git+https://github.com/ytsimon2004/regrender.git
 
 # Option 2 — uv virtual environment (development)
 git clone https://github.com/ytsimon2004/regrender.git && cd regrender

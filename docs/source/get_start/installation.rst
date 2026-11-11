@@ -23,9 +23,18 @@ virtual environment to manage:
 
 .. code-block:: bash
 
-    uv tool install git+https://github.com/ytsimon2004/regrender.git
+    uv tool install --python 3.12 git+https://github.com/ytsimon2004/regrender.git
 
-This installs ``regrender`` into an isolated environment and puts it on your ``PATH``. Upgrade or
+This installs ``regrender`` into an isolated environment and puts it on your ``PATH``.
+
+.. important::
+
+    Keep ``--python 3.12``. Without it, uv may build the tool environment on whatever Python is
+    active, e.g. a conda ``(base)`` 3.11, and ``regrender`` then fails at startup with a NumPy
+    ``ImportError`` (``_multiarray_umath ... cpython-312``). If that happened, reinstall with
+    ``uv tool install --python 3.12 --reinstall git+https://github.com/ytsimon2004/regrender.git``.
+
+Upgrade or
 remove it later with:
 
 .. code-block:: bash
