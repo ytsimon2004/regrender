@@ -24,6 +24,7 @@ dependencies = [
     # are not found); untested with neuralib + the apps, so stay on 2.x until migrated
     "brainglobe-atlasapi>=2.3,<3",
     "imageio",
+    "natsort>=8",  # natural slice order (slice_2 before slice_10); only transitive via brainglobe-utils otherwise
     "rich",
 ]
 

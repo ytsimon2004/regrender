@@ -15,6 +15,7 @@ from pathlib import Path
 
 import numpy as np
 from argclz import AbstractParser, argument
+from natsort import natsorted
 from neuralib.atlas.view import get_slice_view
 
 from regrender._core import region_name
@@ -198,7 +199,7 @@ class SliceReconstructOptions(AbstractParser):
     _IMG_EXT = _IMG_EXT
 
     def _list_images(self, d: Path) -> list[Path]:
-        return sorted(p for p in Path(d).iterdir() if p.suffix.lower() in self._IMG_EXT)
+        return natsorted(p for p in Path(d).iterdir() if p.suffix.lower() in self._IMG_EXT)
 
     def _transform_path(self, img: Path) -> Path:
         return self._tdir / f'{img.stem}_transform.json'

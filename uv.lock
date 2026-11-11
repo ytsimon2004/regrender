@@ -3738,6 +3738,7 @@ dependencies = [
     { name = "brainglobe-atlasapi" },
     { name = "imageio" },
     { name = "napari", extra = ["pyqt6"] },
+    { name = "natsort" },
     { name = "neuralib-atlas", extra = ["brainrender"] },
     { name = "rich" },
 ]
@@ -3763,6 +3764,7 @@ requires-dist = [
     { name = "imageio" },
     { name = "mypy", marker = "extra == 'lint'" },
     { name = "napari", extras = ["pyqt6"], specifier = ">=0.10" },
+    { name = "natsort", specifier = ">=8" },
     { name = "neuralib-atlas", extras = ["brainrender"], specifier = ">=0.7.3" },
     { name = "pydata-sphinx-theme", marker = "extra == 'doc'" },
     { name = "pytest", marker = "extra == 'test'" },
