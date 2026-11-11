@@ -38,3 +38,16 @@ def test_single_unregistered_image_raises(tmp_path):
     _make(tmp_path, all_stems=['a'], registered_stems=[])
     with pytest.raises(FileNotFoundError):
         _opts(raw_image=tmp_path / 'a.tif')._resolve_paths('probe/probe_shanks.csv')
+
+
+@pytest.mark.parametrize('cls_path', ['regrender.main_register:RegisterOptions',
+                                      'regrender.main_probe:ProbeOptions',
+                                      'regrender.main_roi:RoiOptions'])
+def test_list_images_natural_order(tmp_path, cls_path):
+    # every app must step through a folder in the same, natural order (slice_2 before slice_10)
+    import importlib
+    mod, cls = cls_path.split(':')
+    for name in ['slice_10.tif', 'slice_2.tif', 'slice_1.tif', 'notes.txt']:
+        (tmp_path / name).write_bytes(b'')
+    o = getattr(importlib.import_module(mod), cls)()
+    assert [p.stem for p in o._list_images(tmp_path)] == ['slice_1', 'slice_2', 'slice_10']
